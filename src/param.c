@@ -1,5 +1,5 @@
 #include "param.h"
-#include "config.h"
+#include "../include/config.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -34,7 +34,7 @@ char param_parse(int argc, char* argv[]) {
 				print_version();
 				return 1;
 			} else if (strcmp("--help", argv[i]) == 0) {
-				print_help();
+				print_help(argv[0]);
 				return 1;
 			} else {
 				if (i + 1 >= argc) {
@@ -80,5 +80,8 @@ void print_version() {
 	printf("micro-container version %s\n", VERSION);
 }
 
-void print_help() {
+void print_help(char* self) {
+	printf("Usage: %s [-d library-path] [-r lower-root] "
+		"[-s setup-script] [-n container-name] [-u username] "
+		"[-- [launch-command]]\n", self);
 }
