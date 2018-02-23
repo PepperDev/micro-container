@@ -1,11 +1,11 @@
 TARGET  ?= bin/container
 DESTDIR ?= /usr/local
 
-SOURCES = $(patsubst %,src/%.c,main)
+SOURCES = $(patsubst %,src/%.c,main param)
 
 OBJS    = $(SOURCES:src/%.c=.objs/%.o)
 
-CFLAGS  = -O2 -Iinclude
+CFLAGS  = -O2
 LDFLAGS =
 LIBS    =
 
