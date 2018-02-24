@@ -3,4 +3,6 @@
 
 char mkdirr(const char*);
 
+char* which(const char*);
+
 #endif

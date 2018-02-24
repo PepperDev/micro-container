@@ -1,7 +1,7 @@
 TARGET  ?= bin/container
 DESTDIR ?= /usr/local
 
-SOURCES = $(patsubst %,src/%.c,main param mount io)
+SOURCES = $(patsubst %,src/%.c,main param mount io credential)
 
 OBJS    = $(SOURCES:src/%.c=.objs/%.o)
 
@@ -21,7 +21,7 @@ $(TARGET): dirs $(OBJS)
 dirs:
 	-mkdir -p $(dir $(TARGET) $(OBJS))
 
-clean:
+clear:
 	-rm -f $(TARGET) $(OBJS)
 	-rmdir -p $(dir $(TARGET) $(OBJS))
 
