@@ -8,5 +8,6 @@ extern char *name = NULL;
 extern char *user = NULL;
 extern char **launch = NULL;
 extern char unload = 0;
+extern char hardcp = 0;
 
 #endif

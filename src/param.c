@@ -5,8 +5,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-// TODO: allow not using overlay by -n option, it should copy the root
-
 void print_version();
 void print_help();
 
@@ -17,6 +15,7 @@ char *name = NULL;
 char *user = NULL;
 char **launch = NULL;
 char unload = 0;
+char hardcp = 0;
 
 char param_parse(int argc, char* argv[]) {
 	char moreargs = 1;
@@ -36,6 +35,8 @@ char param_parse(int argc, char* argv[]) {
 			} else if (strcmp("--help", argv[i]) == 0) {
 				print_help(argv[0]);
 				return 1;
+			} else if (strcmp("-c", argv[i]) == 0 && !hardcp) {
+				hardcp = 1;
 			} else {
 				if (i + 1 >= argc) {
 					found = 0;
@@ -81,7 +82,7 @@ void print_version() {
 }
 
 void print_help(char* self) {
-	printf("Usage: %s [-d library-path] [-r lower-root] "
+	printf("Usage: %s [-d library-path] [-r lower-root] [-c] "
 		"[-s setup-script] [-n container-name] [-u username] "
 		"[-- [launch-command]]\n", self);
 }

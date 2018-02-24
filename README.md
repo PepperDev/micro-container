@@ -14,7 +14,9 @@ To run an Alpine based system:
 
     if [ ! -d /var/lib/micro-container/root-alpine ]; then
         sudo mkdir -p /var/lib/micro-container/root-alpine
-        wget -qO 'https://github.com/gliderlabs/docker-alpine/raw/rootfs/library-3.7/x86_64/versions/library-3.7/x86_64/rootfs.tar.xz' | sudo tar -xJv -C /
+        wget -qO- \
+            'https://github.com/gliderlabs/docker-alpine/raw/rootfs/library-3.7/x86_64/versions/library-3.7/x86_64/rootfs.tar.xz' \
+            | sudo tar -xJv -C /var/lib/micro-container/root-alpine
     fi
     # Then simply:
     $ container alpine
@@ -22,7 +24,7 @@ To run an Alpine based system:
     $ container -r /var/lib/micro-container/root-alpine other-container-name
 
 ## Download
-...
+Not avaiable yet, comming soon...
 
 ## Build
 `$ make`
