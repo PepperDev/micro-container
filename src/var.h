@@ -1,13 +1,13 @@
 #ifndef VAR_H
 #define VAR_H
 
-extern char *dir = NULL;
-extern char *lower = NULL;
-extern char *setup = NULL;
-extern char *name = NULL;
-extern char *user = NULL;
-extern char **launch = NULL;
-extern char unload = 0;
-extern char hardcp = 0;
+extern char *dir;
+extern char *lower;
+extern char *setup;
+extern char *name;
+extern char *user;
+extern char **launch;
+extern char unload;
+extern char hardcp;
 
 #endif

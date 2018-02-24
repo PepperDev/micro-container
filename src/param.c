@@ -5,8 +5,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-void print_version();
-void print_help();
+static void print_version();
+static void print_help();
 
 char *dir = NULL;
 char *lower = NULL;
@@ -77,11 +77,11 @@ char param_parse(int argc, char* argv[]) {
 	return 0;
 }
 
-void print_version() {
+static void print_version() {
 	printf("micro-container version %s\n", VERSION);
 }
 
-void print_help(char* self) {
+static void print_help(char* self) {
 	printf("Usage: %s [-d library-path] [-r lower-root] [-c] "
 		"[-s setup-script] [-n container-name] [-u username] "
 		"[-- [launch-command]]\n", self);
