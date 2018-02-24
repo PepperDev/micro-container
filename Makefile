@@ -4,26 +4,33 @@ DESTDIR ?= /usr/local
 SOURCES = $(patsubst %,src/%.c,main param mount io credential)
 
 OBJS    = $(SOURCES:src/%.c=.objs/%.o)
+DIRS    = $(patsubst %/,%,$(sort $(dir $(TARGET) $(OBJS))))
 
 CFLAGS  = -O2
 LDFLAGS =
 LIBS    =
 
 all: $(TARGET)
-	strip $(TARGET)
+.PHONY: all clear install
 
-$(TARGET): dirs $(OBJS)
-	$(CC) $(LDFLAGS) $(OBJS) -o $@ $(LIBS)
+$(TARGET): $(OBJS) | bin
+	$(CC) $(LDFLAGS) -o $@ $(OBJS) $(LIBS)
+	strip $@
 
-.objs/%.o: src/%.c
-	$(CC) $(CFLAGS) -c $? -o $@
+.objs/%.o: src/%.c | .objs
+	$(CC) $(CFLAGS) -c $< -o $@
 
-dirs:
-	-mkdir -p $(dir $(TARGET) $(OBJS))
+.objs/credential.o: src/io.h
+.objs/main.o: src/param.h src/mount.h src/credential.h
+.objs/mount.o: src/var.h src/io.h src/config.h
+.objs/param.o: src/config.h
 
-clear:
+$(DIRS):
+	-mkdir -p $@
+
+clean:
 	-rm -f $(TARGET) $(OBJS)
-	-rmdir -p $(dir $(TARGET) $(OBJS))
+	-rmdir -p $(DIRS)
 
 install:
 	install -o 0 -g 0 -m 4755 $(TARGET) $(DESTDIR)/bin/

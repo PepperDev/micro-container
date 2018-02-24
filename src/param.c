@@ -1,9 +1,8 @@
-#include "param.h"
-#include "config.h"
-
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+
+#include "config.h"
 
 static void print_version();
 static void print_help();
