@@ -41,8 +41,8 @@ void mount_container() {
 }
 
 static char* check_library() {
-	char *app;
-	size_t len, len_name, max;
+	char *app, *p;
+	size_t len, len_name, len_preffix, len_separator, max;
 	if (dir == NULL || *dir == 0) {
 		dir = DEFAULT_DIR;
 	}
@@ -52,12 +52,22 @@ static char* check_library() {
 	} else {
 		len_name = strlen(name);
 	}
-	max = len + len_name + sizeof(PREFFIX) + sizeof(PREFFIX_SEPARATOR);
+	len_preffix = sizeof(PREFFIX) - 1;
+	len_separator = sizeof(PREFFIX_SEPARATOR) - 1;
+	max = len + len_name + len_preffix + len_separator + 2;
 	app = malloc(max);
+	memcpy(app, dir, len);
+	p = app + len;
+	*p = '/';
+	p++;
 	if (len_name) {
-		sprintf(app, "%s/%s%s%s", dir, PREFFIX, PREFFIX_SEPARATOR, name);
+		memcpy(p, PREFFIX, len_preffix);
+		p += len_preffix;
+		memcpy(p, PREFFIX_SEPARATOR, len_separator);
+		p += len_separator;
+		memcpy(p, name, len_name + 1);
 	} else {
-		sprintf(app, "%s/%s", dir, PREFFIX);
+		memcpy(p, PREFFIX, len_preffix + 1);
 	}
 	if (mkdirr(app)) {
 		fprintf(stderr, "Could not create container dir \"%s\"!\n", app);
