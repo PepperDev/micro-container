@@ -19,7 +19,7 @@ char hardcp = 0;
 char param_parse(int argc, char* argv[]) {
 	char moreargs = 1;
 	char found;
-	for (int i = 0; i < argc; i++) {
+	for (int i = 1; i < argc; i++) {
 		if (moreargs) {
 			found = 1;
 			if (strcmp("--", argv[i]) == 0) {
