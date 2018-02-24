@@ -1,5 +1,5 @@
-#ifndef PARAM_H
-#define PARAM_H
+#ifndef VAR_H
+#define VAR_H
 
 extern char *dir = NULL;
 extern char *lower = NULL;

@@ -1,7 +1,7 @@
 TARGET  ?= bin/container
 DESTDIR ?= /usr/local
 
-SOURCES = $(patsubst %,src/%.c,main param)
+SOURCES = $(patsubst %,src/%.c,main param mount)
 
 OBJS    = $(SOURCES:src/%.c=.objs/%.o)
 
