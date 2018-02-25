@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <sys/utsname.h>
 #include <string.h>
+#include <sys/mount.h>
 
 #include "var.h"
 #include "io.h"
@@ -13,33 +14,26 @@
 
 static char* check_library();
 static char is_overlay_supported();
+static char* make_component(char*, size_t, char*, size_t);
 
 void mount_container() {
-	char *app, *upper, *work, *root, *p;
-	size_t len, len_comp, len_dir, len_name;
+	char *app, *upper, *work, *root, *opt, *p;
+	size_t len, len_comp, len_dir, len_name, max;
 	app = check_library();
 	len = strlen(app);
 
-	// Upper
-	len_comp = sizeof(UPPER_COMPONENT);
-	upper = malloc(len + len_comp + 1);
-	memcpy(upper, app, len);
-	p = upper + len;
-	*p = '/';
-	p++;
-	memcpy(p, UPPER_COMPONENT, len_comp);
+	if (!hardcp) {
+		// Upper
+		upper = make_component(app, len,
+			UPPER_COMPONENT, sizeof(UPPER_COMPONENT) - 1);
 
-	// Work
-	if (!hardcp && is_overlay_supported()) {
-		len_comp = sizeof(WORK_COMPONENT);
-		work = malloc(len + len_comp + 1);
-		memcpy(work, app, len);
-		p = work + len;
-		*p = '/';
-		p++;
-		memcpy(p, WORK_COMPONENT, len_comp);
-	} else {
-		work = NULL;
+		// Work
+		if (is_overlay_supported()) {
+			work = make_component(app, len,
+				WORK_COMPONENT, sizeof(WORK_COMPONENT) - 1);
+		} else {
+			work = NULL;
+		}
 	}
 
 	// Lower
@@ -70,16 +64,41 @@ void mount_container() {
 	}
 
 	// Root
-	len_comp = sizeof(MOUNT_POINT);
-	root = malloc(len + len_comp + 1);
-	memcpy(root, app, len);
-	p = root + len;
-	*p = '/';
-	p++;
-	memcpy(p, MOUNT_POINT, len_comp);
+	root = make_component(app, len, MOUNT_POINT, sizeof(MOUNT_POINT) - 1);
 
 	// TODO: write PID_FILE, lock LOCK_FILE
-	// TODO: if (hardcp) copy root instead of overlay
+	if (hardcp) {
+		if (!is_dir(root)) {
+			// TODO: perform copy of lower instead of overlay
+		}
+	} else {
+		if (mkdirr(root)) {
+			fprintf(stderr, "Could not create root dir \"%s\"!\n", root);
+			exit(-1);
+		}
+		if (mkdirr(upper)) {
+			fprintf(stderr, "Could not create upper dir \"%s\"!\n", upper);
+			exit(-1);
+		}
+		if (work == NULL) {
+
+		} else {
+			if (mkdirr(work)) {
+				fprintf(stderr, "Could not create work dir \"%s\"!\n", work);
+				exit(-1);
+			}
+			len_comp = strlen(lower);
+			len_dir = strlen(upper);
+			len_name = strlen(work);
+			max = len_comp + len_dir + len_name + 29;
+			opt = malloc(max);
+			snprintf(opt, max, "lowerdir=%s,upperdir=%s,workdir=%s", lower, upper, work);
+			if (mount("overlay", root, "overlay", 0, opt)) {
+				fprintf(stderr, "Could not mount container with opt \"%s\"!\n", opt);
+				exit(-1);
+			}
+		}
+	}
 	//clone2
 	//execve
 	//setns(int fd, int nstype);
@@ -130,4 +149,16 @@ static char is_overlay_supported() {
 		return major > 3 || major == 3 && minor >= 18;
 	}
 	return 0;
+}
+
+static char* make_component(char *dir, size_t len_dir,
+	char *comp, size_t len_comp) {
+	char *path, *p;
+	path = malloc(len_dir + len_comp + 2);
+	memcpy(path, dir, len_dir);
+	p = path + len_dir;
+	*p = '/';
+	p++;
+	memcpy(p, comp, len_comp + 1);
+	return path;
 }
