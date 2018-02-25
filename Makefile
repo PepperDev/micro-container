@@ -1,12 +1,13 @@
 TARGET  ?= bin/container
 DESTDIR ?= /usr/local
 
-SOURCES = $(patsubst %,src/%.c,main param mount io credential container)
+SOURCES = $(patsubst %,src/%.c,main param mount io credential container \
+          overlay)
 
 OBJS    = $(SOURCES:src/%.c=.objs/%.o)
 DIRS    = $(patsubst %/,%,$(sort $(dir $(TARGET) $(OBJS))))
 
-CFLAGS  = -O2
+CFLAGS  = -O2 -Wall
 LDFLAGS =
 LIBS    =
 
@@ -22,7 +23,7 @@ $(TARGET): $(OBJS) | bin
 
 .objs/credential.o: src/io.h src/uid.h
 .objs/main.o: src/param.h src/mount.h src/credential.h
-.objs/mount.o: src/var.h src/io.h src/config.h src/container.h
+.objs/mount.o: src/var.h src/io.h src/config.h src/container.h src/overlay.h
 .objs/param.o: src/config.h
 .objs/container.o: src/var.h src/uid.h src/config.h
 

@@ -2,11 +2,11 @@
 #include <stdlib.h>
 #include <sys/utsname.h>
 #include <string.h>
-#include <sys/mount.h>
 
 #include "var.h"
 #include "io.h"
 #include "config.h"
+#include "overlay.h"
 #include "container.h"
 
 // TODO: volumes, x11, pulse
@@ -17,8 +17,8 @@ static char is_overlay_supported();
 static char* make_component(char*, size_t, char*, size_t);
 
 void mount_container() {
-	char *app, *upper, *work, *root, *opt, *p;
-	size_t len, len_comp, len_dir, len_name, max;
+	char *app, *upper, *work, *root, *p, free_lower;
+	size_t len, len_comp, len_dir, len_name;
 	app = check_library();
 	len = strlen(app);
 
@@ -36,7 +36,12 @@ void mount_container() {
 		}
 	}
 
+	// Root
+	root = make_component(app, len, MOUNT_POINT, sizeof(MOUNT_POINT) - 1);
+	free(app);
+
 	// Lower
+	free_lower = 0;
 	if (lower == NULL || *lower == 0) {
 		len_dir = strlen(dir);
 		if (name == NULL || *name == 0) {
@@ -57,20 +62,19 @@ void mount_container() {
 		} else {
 			*p = 0;
 		}
-		if (!is_dir(lower)) {
+		if (is_dir(lower)) {
+			free_lower = 1;
+		} else {
 			free(lower);
 			lower = DEFAULT_LOWER;
 		}
-		// TODO: else defer free(lower)
 	}
-
-	// Root
-	root = make_component(app, len, MOUNT_POINT, sizeof(MOUNT_POINT) - 1);
 
 	// TODO: write PID_FILE, lock LOCK_FILE
 	if (hardcp) {
 		if (!is_dir(root)) {
 			// TODO: perform copy of lower instead of overlay
+			// TODO: copy all but /proc /dev /sys /tmp /var/tmp /var/run /run /var/cache /var/log (and any non device mount)
 		}
 	} else {
 		if (mkdirr(root)) {
@@ -81,35 +85,21 @@ void mount_container() {
 			fprintf(stderr, "Could not create upper dir \"%s\"!\n", upper);
 			exit(-1);
 		}
-		if (work == NULL) {
-			// TODO: old kernel use overlayfs instead overlay
-		} else {
-			if (mkdirr(work)) {
-				fprintf(stderr, "Could not create work dir \"%s\"!\n", work);
-				exit(-1);
-			}
-			len_comp = strlen(lower);
-			len_dir = strlen(upper);
-			len_name = strlen(work);
-			max = len_comp + len_dir + len_name + 29;
-			opt = malloc(max);
-			// TODO: escape , to \,
-			snprintf(opt, max, "lowerdir=%s,upperdir=%s,workdir=%s",
-				lower, upper, work);
-			if (mount("overlay", root, "overlay", 0, opt)) {
-				fprintf(stderr,
-					"Could not mount container on \"%s\" with opt \"%s\"!\n",
-					root, opt);
-				exit(-1);
-			}
-			free(opt);
+		if (work != NULL && mkdirr(work)) {
+			fprintf(stderr, "Could not create work dir \"%s\"!\n", work);
+			exit(-1);
+		}
+		overlay(root, lower, upper, work);
+		if (work != NULL) {
 			free(work);
 		}
 		free(upper);
 	}
+	if (free_lower) {
+		free(lower);
+	}
 	container(root);
 	free(root);
-	free(app);
 }
 
 static char* check_library() {
@@ -153,7 +143,7 @@ static char is_overlay_supported() {
 	int major, minor;
 	if (!uname(&suname)) {
 		sscanf(suname.release, "%d.%d.%*s", &major, &minor);
-		return major > 3 || major == 3 && minor >= 18;
+		return major > 3 || (major == 3 && minor >= 18);
 	}
 	return 0;
 }

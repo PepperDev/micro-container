@@ -7,6 +7,7 @@
 #include "config.h"
 
 void container(const char *root) {
+	// check user
 	//clone2
 	//chroot
 	//execve

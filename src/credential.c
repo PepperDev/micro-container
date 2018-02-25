@@ -12,7 +12,7 @@ uid_t old_uid;
 void check_credential(int argc, char* argv[]) {
 	char *sudo;
 	old_uid = getuid();
-	if (old_uid == 0 || setuid(0) == 0 && setgid(0) == 0) {
+	if (old_uid == 0 || (setuid(0) == 0 && setgid(0) == 0)) {
 		return;
 	}
 	sudo = which("sudo");
