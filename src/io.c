@@ -4,6 +4,11 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <libgen.h>
+#include <errno.h>
+#include <fcntl.h>
+
+#define BUFSIZE  4096
+#define STEPSIZE 1024
 
 char is_dir(const char *);
 static char is_exe(const char *);
@@ -78,4 +83,55 @@ static char is_exe(const char *path) {
 	return !access(path, X_OK) &&
 		!stat(path, &fst) &&
 		S_ISREG(fst.st_mode);
+}
+
+char* readfile(const char *file) {
+	int fd;
+	char *buf, *p;
+	off_t max, left;
+	ssize_t bread;
+	struct stat st;
+	for (;;) {
+		errno = 0;
+		fd = open(file, O_RDONLY);
+		if (fd >= 0) {
+			break;
+		} else if (errno != EINTR) {
+			return NULL;
+		}
+	}
+	if (fstat(fd, &st)) {
+		max = BUFSIZE;
+	} else {
+		max = st.st_size;
+		if (max == 0) {
+			max = BUFSIZE;
+		}
+	}
+	left = max;
+	buf = malloc(max + 1);
+	p = buf;
+	for (;;) {
+		errno = 0;
+		bread = read(fd, p, left);
+		if (bread > 0) {
+			p += bread;
+			left -= bread;
+			if (left <= 0) {
+				left += STEPSIZE;
+				max += STEPSIZE;
+				buf = realloc(buf, max + 1);
+				p = buf + max - left;
+			}
+		} else if (errno != 0 && errno != EINTR && errno != EAGAIN) {
+			free(buf);
+			close(fd);
+			return NULL;
+		} else {
+			break;
+		}
+	}
+	close(fd);
+	*p = 0;
+	return buf;
 }

@@ -1,122 +1,186 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <string.h>
-#include <pwd.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <errno.h>
 
 #include "uid.h"
 #include "var.h"
+#include "io.h"
 
+static void find_user(const char*, const char*, const uid_t*, char**,
+	uid_t*, gid_t*, char**);
 static uid_t my_getpuid(const char*, pid_t);
 static pid_t my_getppid(const char*, pid_t);
 
 void calc_user(const char *root, char **home, uid_t *uid, gid_t *gid) {
 	size_t len;
-	FILE *file;
 	pid_t pid;
-	char *etc_passwd;
-	struct passwd *passwd;
+	char *file, *buf;
 	len = strlen(root);
-	etc_passwd = malloc(len + 12);
-	memcpy(etc_passwd, root, len);
-	memcpy(etc_passwd + len, "/etc/passwd", 12);
-	file = fopen(etc_passwd, "r");
-	if (file == NULL) {
+	file = malloc(len + 12);
+	memcpy(file, root, len);
+	memcpy(file + len, "/etc/passwd", 12);
+	buf = readfile(file);
+	if (buf == NULL) {
 		user = "root";
 		*uid = 0;
 		*gid = 0;
 		*home = strdup("/root");
-	} else {
-		if (user != NULL && *user != 0) {
-			*home = NULL;
-			while ((passwd = fgetpwent(file)) != NULL) {
-				if (strcmp(passwd->pw_name, user) == 0) {
-					*uid = passwd->pw_uid;
-					*gid = passwd->pw_gid;
-					*home = strdup(passwd->pw_dir);
-					break;
-				}
-			}
-			if (*home == NULL) {
-				user = NULL;
-				rewind(file);
-			}
-		}
-		if (user == NULL || *user == 0) {
-			if (old_uid == 0) {
-				pid = getppid();
-				old_uid = my_getpuid(root, pid);
-				if (old_uid == 0) {
-					pid = my_getppid(root, pid);
-					old_uid = my_getpuid(root, pid);
-				}
-			}
-			*uid = old_uid;
-			*home = NULL;
-			while ((passwd = fgetpwent(file)) != NULL) {
-				if (passwd->pw_uid == *uid) {
-					user = strdup(passwd->pw_name);
-					*gid = passwd->pw_gid;
-					*home = strdup(passwd->pw_dir);
-					break;
-				}
-			}
-			if (*home == NULL) {
-				user = "root";
-				*uid = 0;
-				*gid = 0;
-				*home = strdup("/root");
-			}
-		}
-		fclose(file);
+		return;
 	}
+	if (user != NULL && *user != 0) {
+		*home = NULL;
+		find_user(buf, user, NULL, NULL, uid, gid, home);
+		if (*home == NULL) {
+			user = NULL;
+		}
+	}
+	if (user == NULL || *user == 0) {
+		if (old_uid == 0) {
+			pid = getppid();
+			old_uid = my_getpuid(root, pid);
+			if (old_uid == 0) {
+				pid = my_getppid(root, pid);
+				old_uid = my_getpuid(root, pid);
+			}
+		}
+		*uid = old_uid;
+		*home = NULL;
+		find_user(buf, NULL, uid, &user, NULL, gid, home);
+	}
+	free(buf);
+	if (*home == NULL) {
+		user = "root";
+		*uid = 0;
+		*gid = 0;
+		*home = strdup("/root");
+	}
+}
+
+static void find_user(const char *obuf, const char *user, const uid_t *uid,
+	char **found_user, uid_t *found_uid, gid_t *gid, char **home) {
+	char *buf, *p, *next, *tok, found;
+	size_t len;
+	unsigned int line_uid;
+	buf = strdup(obuf);
+	if (user != NULL) {
+		len = strlen(user);
+	}
+	for (p = buf; p != NULL; p = next) {
+		next = strchr(p, '\n');
+		if (next) {
+			*next = 0;
+			next++;
+		}
+		if (next - p <= 1) {
+			continue;
+		}
+		found = 1;
+		if (user != NULL) {
+			tok = strchr(p, ':');
+			if (tok - p != len || memcmp(user, p, len) != 0) {
+				found = 0;
+			}
+		}
+		if (uid != NULL) {
+			sscanf(p, "%*[^:]:%*[^:]:%u:%*s", &line_uid);
+			if (line_uid != *uid) {
+				found = 0;
+			}
+		}
+		if (found) {
+			if (found_user != NULL) {
+				if (user != NULL) {
+					if (*found_user != user) {
+						*found_user = strdup(user);
+					}
+				} else {
+					tok = strchr(p, ':');
+					len = tok - p;
+					*found_user = malloc(len + 1);
+					memcpy(*found_user, p, len);
+					(*found_user)[len] = 0;
+				}
+			}
+			if (found_uid != NULL) {
+				if (uid != NULL) {
+					*found_uid = *uid;
+				} else {
+					sscanf(p, "%*[^:]:%*[^:]:%d:%*s", found_uid);
+				}
+			}
+			if (gid != NULL) {
+				sscanf(p, "%*[^:]:%*[^:]:%*[^:]:%d:%*s", gid);
+			}
+			if (home != NULL) {
+				for (int i = 5; i--;) {
+					p = strchr(p, ':');
+					if (p == NULL) {
+						break;
+					}
+					p++;
+				}
+				if (p != NULL) {
+					next = strchr(p, ':');
+					if (next != NULL) {
+						len = next - p;
+						*home = malloc(len + 1);
+						memcpy(*home, p, len);
+						(*home)[len] = 0;
+					}
+				}
+			}
+			break;
+		}
+	}
+	free(buf);
 }
 
 static uid_t my_getpuid(const char *root, pid_t pid) {
 	size_t len;
-	int fd;
-	char *file, *buf, *p;
-	struct stat st;
-	off_t left;
-	ssize_t bread;
+	char *file, *buf, *p, *next;
+	uid_t uid, euid;
 	len = strlen(root);
 	file = malloc(len + 32);
 	snprintf(file, len + 32, "%s/proc/%d/status", root, pid);
-	fd = open(file, O_RDONLY);
+	buf = readfile(file);
 	free(file);
-	if (fd == -1) {
+	if (buf == NULL) {
 		return 0;
 	}
-	if (fstat(fd, &st)) {
-		close(fd);
-		return 0;
-	}
-	left = st.st_size;
-	buf = malloc(left + 1);
-	p = buf;
-	while (left > 0) {
-		bread = read(fd, p, left);
-		if (bread > 0) {
-			p += bread;
-			left -= bread;
-		} else if (errno != EINTR) {
-			free(buf);
-			close(fd);
-			return 0;
+	uid = 0;
+	for (p = buf; p != NULL; p = next) {
+		next = strchr(p, '\n');
+		if (next) {
+			*next = 0;
+			next++;
+		}
+		if (strlen(p) > 4 && memcmp(p, "Uid:", 4) == 0) {
+			sscanf(p, "Uid: %d %d %*s", &uid, &euid);
+			if (uid == 0) {
+				uid = euid;
+			}
+			break;
 		}
 	}
-	close(fd);
-	*p = 0;
-	// TODO: Seek Uid:
 	free(buf);
-	return 0;
+	return uid;
 }
 
 static pid_t my_getppid(const char *root, pid_t pid) {
-	// TODO: get parent of parent -> read 4th /proc/pid/stat
-	return pid;
+	char *path, *buf;
+	size_t len;
+	pid_t ppid;
+	len = strlen(root);
+	path = malloc(len + 32);
+	snprintf(path, len + 32, "%s/proc/%d/stat", root, pid);
+	buf = readfile(path);
+	free(path);
+	if (buf == NULL) {
+		return pid;
+	}
+	sscanf(buf, "%*d %*s %*c %d %*s", &ppid);
+	free(buf);
+	return ppid;
 }

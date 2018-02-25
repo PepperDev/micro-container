@@ -7,4 +7,6 @@ char mkdirr(const char*);
 
 char* which(const char*);
 
+char* readfile(const char*);
+
 #endif
