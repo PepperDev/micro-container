@@ -3,11 +3,16 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <string.h>
+
 #include "io.h"
+#include "uid.h"
+
+uid_t old_uid;
 
 void check_credential(int argc, char* argv[]) {
 	char *sudo;
-	if (getuid() == 0) {
+	old_uid = getuid();
+	if (old_uid == 0 || setuid(0) == 0 && setgid(0) == 0) {
 		return;
 	}
 	sudo = which("sudo");

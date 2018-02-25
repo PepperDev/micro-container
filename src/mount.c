@@ -7,10 +7,10 @@
 #include "var.h"
 #include "io.h"
 #include "config.h"
+#include "container.h"
 
 // TODO: volumes, x11, pulse
 // /proc/self/mountinfo \040 -> space
-// mount , -> \,
 
 static char* check_library();
 static char is_overlay_supported();
@@ -61,6 +61,7 @@ void mount_container() {
 			free(lower);
 			lower = DEFAULT_LOWER;
 		}
+		// TODO: else defer free(lower)
 	}
 
 	// Root
@@ -81,7 +82,7 @@ void mount_container() {
 			exit(-1);
 		}
 		if (work == NULL) {
-
+			// TODO: old kernel use overlayfs instead overlay
 		} else {
 			if (mkdirr(work)) {
 				fprintf(stderr, "Could not create work dir \"%s\"!\n", work);
@@ -92,17 +93,23 @@ void mount_container() {
 			len_name = strlen(work);
 			max = len_comp + len_dir + len_name + 29;
 			opt = malloc(max);
-			snprintf(opt, max, "lowerdir=%s,upperdir=%s,workdir=%s", lower, upper, work);
+			// TODO: escape , to \,
+			snprintf(opt, max, "lowerdir=%s,upperdir=%s,workdir=%s",
+				lower, upper, work);
 			if (mount("overlay", root, "overlay", 0, opt)) {
-				fprintf(stderr, "Could not mount container with opt \"%s\"!\n", opt);
+				fprintf(stderr,
+					"Could not mount container on \"%s\" with opt \"%s\"!\n",
+					root, opt);
 				exit(-1);
 			}
+			free(opt);
+			free(work);
 		}
+		free(upper);
 	}
-	//clone2
-	//execve
-	//setns(int fd, int nstype);
-	//sigaction
+	container(root);
+	free(root);
+	free(app);
 }
 
 static char* check_library() {
