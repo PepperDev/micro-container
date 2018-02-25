@@ -9,9 +9,6 @@
 #include "overlay.h"
 #include "container.h"
 
-// TODO: volumes, x11, pulse
-// /proc/self/mountinfo \040 -> space
-
 static char* check_library();
 static char is_overlay_supported();
 static char* make_component(char*, size_t, char*, size_t);
