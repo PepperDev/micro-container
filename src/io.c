@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <libgen.h>
 
-static char is_dir(const char *);
+char is_dir(const char *);
 static char is_exe(const char *);
 
 char mkdirr(const char *path) {
@@ -66,7 +66,7 @@ char* which(const char*name) {
 	return found;
 }
 
-static char is_dir(const char *path) {
+char is_dir(const char *path) {
 	struct stat fst;
 	return !access(path, X_OK) &&
 		!stat(path, &fst) &&

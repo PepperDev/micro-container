@@ -15,25 +15,71 @@ static char* check_library();
 static char is_overlay_supported();
 
 void mount_container() {
-	char *app, *upper, *work, *root;
-	size_t len;
+	char *app, *upper, *work, *root, *p;
+	size_t len, len_comp, len_dir, len_name;
 	app = check_library();
 	len = strlen(app);
-	if (lower == NULL || *lower == 0) {
-		lower = DEFAULT_LOWER;
-	}
-	upper = malloc(len + sizeof(UPPER_COMPONENT) + 1);
+
+	// Upper
+	len_comp = sizeof(UPPER_COMPONENT);
+	upper = malloc(len + len_comp + 1);
 	memcpy(upper, app, len);
-	upper[len] = '/';
-	memcpy(&upper[len + 1], UPPER_COMPONENT, sizeof(UPPER_COMPONENT));
-	if (is_overlay_supported()) {
-		work = malloc(len + sizeof(WORK_COMPONENT) + 1);
+	p = upper + len;
+	*p = '/';
+	p++;
+	memcpy(p, UPPER_COMPONENT, len_comp);
+
+	// Work
+	if (!hardcp && is_overlay_supported()) {
+		len_comp = sizeof(WORK_COMPONENT);
+		work = malloc(len + len_comp + 1);
 		memcpy(work, app, len);
-		work[len] = '/';
-		memcpy(&work[len + 1], WORK_COMPONENT, sizeof(WORK_COMPONENT));
+		p = work + len;
+		*p = '/';
+		p++;
+		memcpy(p, WORK_COMPONENT, len_comp);
 	} else {
 		work = NULL;
 	}
+
+	// Lower
+	if (lower == NULL || *lower == 0) {
+		len_dir = strlen(dir);
+		if (name == NULL || *name == 0) {
+			len_name = 0;
+		} else {
+			len_name = strlen(name);
+		}
+		len_comp = sizeof(ROOT_PREFFIX) - 1;
+		lower = malloc(len_dir + len_name + len_comp + 2);
+		memcpy(lower, dir, len_dir);
+		p = lower + len_dir;
+		*p = '/';
+		p++;
+		memcpy(p, ROOT_PREFFIX, len_comp);
+		p += len_comp;
+		if (len_name) {
+			memcpy(p, name, len_name + 1);
+		} else {
+			*p = 0;
+		}
+		if (!is_dir(lower)) {
+			free(lower);
+			lower = DEFAULT_LOWER;
+		}
+	}
+
+	// Root
+	len_comp = sizeof(MOUNT_POINT);
+	root = malloc(len + len_comp + 1);
+	memcpy(root, app, len);
+	p = root + len;
+	*p = '/';
+	p++;
+	memcpy(p, MOUNT_POINT, len_comp);
+
+	// TODO: write PID_FILE, lock LOCK_FILE
+	// TODO: if (hardcp) copy root instead of overlay
 	//clone2
 	//execve
 	//setns(int fd, int nstype);
