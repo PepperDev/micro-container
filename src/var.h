@@ -9,5 +9,6 @@ extern char *user;
 extern char **launch;
 extern char unload;
 extern char hardcp;
+extern char shared;
 
 #endif

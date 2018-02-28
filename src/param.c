@@ -15,6 +15,7 @@ char *user = NULL;
 char **launch = NULL;
 char unload = 0;
 char hardcp = 0;
+char shared = 0;
 
 char param_parse(int argc, char* argv[]) {
 	char moreargs = 1;
@@ -36,6 +37,8 @@ char param_parse(int argc, char* argv[]) {
 				return 1;
 			} else if (strcmp("-c", argv[i]) == 0 && !hardcp) {
 				hardcp = 1;
+			} else if (strcmp("-p", argv[i]) == 0 && !shared) {
+				shared = 1;
 			} else {
 				if (i + 1 >= argc) {
 					found = 0;
@@ -81,7 +84,7 @@ static void print_version() {
 }
 
 static void print_help(char* self) {
-	printf("Usage: %s [-d library-path] [-r lower-root] [-c] "
+	printf("Usage: %s [-d library-path] [-r lower-root] [-c] [-e] "
 		"[-s setup-script] [-n container-name] [-u username] "
 		"[-- [launch-command]]\n", self);
 }
