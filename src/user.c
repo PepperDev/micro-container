@@ -15,8 +15,6 @@
 #include "var.h"
 #include "io.h"
 
-#define BUFSIZE 4096
-
 static void find_user(const char*, const char*, const uid_t*, char**,
 	uid_t*, gid_t*, char**);
 static uid_t my_getpuid(const char*, pid_t);
@@ -346,9 +344,7 @@ static void copy_home_file(const char *from, const char *to,
 
 static void copy_file(const char *from, const char *to, uid_t uid, gid_t gid) {
 	int fd0, fd1;
-	ssize_t size, len;
 	mode_t mode;
-	char buf[BUFSIZE], *p;
 	fd0 = open(from, O_RDONLY);
 	if (fd0 < 0) {
 		fprintf(stderr, "Could not open file \"%s\" for read.\n", from);
@@ -371,24 +367,7 @@ static void copy_file(const char *from, const char *to, uid_t uid, gid_t gid) {
 		exit(-1);
 		return;
 	}
-	// TODO: check for read intr too
-	while ((size = read(fd0, buf, BUFSIZE)) > 0) {
-		p = buf;
-		do {
-			errno = 0;
-			len = write(fd1, p, size);
-			if (len >= 0) {
-				size -= len;
-				p += len;
-			} else if (errno != 0 && errno != EINTR && errno != EAGAIN) {
-				fprintf(stderr, "Could not write to file \"%s\"\n", to);
-				close(fd0);
-				close(fd1);
-				exit(-1);
-				return;
-			}
-		} while (size > 0);
-	}
+	stream_copy(fd0, fd1);
 	close(fd0);
 	close(fd1);
 }

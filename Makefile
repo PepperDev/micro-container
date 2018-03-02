@@ -25,7 +25,7 @@ $(TARGET): $(OBJS) | bin
 .objs/main.o: src/param.h src/mount.h src/credential.h
 .objs/mount.o: src/var.h src/io.h src/config.h src/container.h src/overlay.h
 .objs/param.o: src/config.h
-.objs/container.o: src/var.h src/uid.h src/config.h src/user.h
+.objs/container.o: src/var.h src/uid.h src/config.h src/user.h src/io.h
 .objs/user.o: src/var.h src/uid.h src/io.h
 
 $(DIRS):

@@ -6,6 +6,7 @@
 #include <libgen.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdio.h>
 
 #define BUFSIZE  4096
 #define STEPSIZE 1024
@@ -134,4 +135,27 @@ char* readfile(const char *file) {
 	close(fd);
 	*p = 0;
 	return buf;
+}
+
+void stream_copy(int fd0, int fd1) {
+	ssize_t size, len;
+	char buf[BUFSIZE], *p;
+	// TODO: check for read intr too
+	while ((size = read(fd0, buf, BUFSIZE)) > 0) {
+		p = buf;
+		do {
+			errno = 0;
+			len = write(fd1, p, size);
+			if (len >= 0) {
+				size -= len;
+				p += len;
+			} else if (errno != 0 && errno != EINTR && errno != EAGAIN) {
+				fprintf(stderr, "Could not write to file\n");
+				close(fd0);
+				close(fd1);
+				exit(-1);
+				return;
+			}
+		} while (size > 0);
+	}
 }

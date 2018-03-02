@@ -9,4 +9,6 @@ char* which(const char*);
 
 char* readfile(const char*);
 
+void stream_copy(int, int);
+
 #endif
