@@ -15,8 +15,7 @@ void container(const char *root) {
 	gid_t gid;
 	char *home;
 	calc_user(root, &home, &uid, &gid);
-	// TODO: check if home exists, if not copy from /etc/skel
-	// TODO: check and copy if not exists: .inputrc .vimrc .gitconfig .screenrc
+	create_home(root, home, uid, gid);
 	// TODO: mount /dev /dev/pts /sys /proc? /run
 	// TODO: if ssd mount tmpfs on /tmp /var/tmp
 	// TODO: clear /tmp /var/tmp

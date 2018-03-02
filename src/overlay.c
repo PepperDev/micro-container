@@ -18,7 +18,7 @@ void overlay(const char *root, const char *lower, const char *upper,
 		// TODO: recursive mount overlay on /etc/* /usr/* /var/* /bin/* /sbin/* /lib/* /lib64/*
 		if (mount("overlay", root, "overlay", 0, opt)) {
 			fprintf(stderr,
-				"Could not mount container on \"%s\" with opt \"%s\"!\n",
+				"Could not mount container on \"%s\" with opt \"%s\" run dmesg to see the problem!\n",
 				root, opt);
 			exit(-1);
 		}
