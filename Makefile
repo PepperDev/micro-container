@@ -2,7 +2,7 @@ TARGET  ?= bin/container
 DESTDIR ?= /usr/local
 
 SOURCES = $(patsubst %,src/%.c,main param mount io credential container \
-          overlay user)
+          overlay user buffer)
 
 OBJS    = $(SOURCES:src/%.c=.objs/%.o)
 DIRS    = $(patsubst %/,%,$(sort $(dir $(TARGET) $(OBJS))))

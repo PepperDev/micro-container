@@ -5,7 +5,7 @@
 
 #include "var.h"
 #include "io.h"
-#include "config.h"
+#include "config_default.h"
 #include "overlay.h"
 #include "container.h"
 

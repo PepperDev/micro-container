@@ -8,7 +8,7 @@
 
 #include "var.h"
 #include "uid.h"
-#include "config.h"
+#include "config_default.h"
 #include "user.h"
 #include "io.h"
 
