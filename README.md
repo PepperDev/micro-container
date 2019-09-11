@@ -22,9 +22,9 @@ To run an Alpine based system:
     $ container -l /var/lib/micro-container/root-alpine -n other-container-name
 
 ## Usage
-	container [-] [-r rootdir] [-b basedir] [-l lowerdir] [-n name] [-w workdir] [-u user:group] [[-v hostvolume:guestvolume]...] [-i initscript] [-s shutdownscript] [[--] command args...]
+	container [-] [-d librarydir] [-b basedir] [-l lowerdir] [-n name] [-w workdir] [-u user:group] [[-v hostvolume:guestvolume]...] [-i initscript] [-s shutdownscript] [[--] command args...]
 
-	rootdir - default to "/var/lib/micro-container"
+	librarydir - default to "/var/lib/micro-container"
 
 	basedir - default to "$HOME/.app"
 
@@ -56,13 +56,13 @@ Not avaiable yet, comming soon...
 ## Notes
 The only parameter that can be set multiple times is `-v`, all others will take the last value if set more than once.
 
-If not exists `rootdir` is created with mode `0700` and root as owner.
+If not exists `librarydir` is created with mode `0700` and root as owner.
 
 If not exists `basedir` is created with default mode and current user as owner.
 
-`rootdir` and `basedir` can be the same, in that case the `basedir` creation take precedence.
+`librarydir` and `basedir` can be the same, in that case the `basedir` creation take precedence.
 
-If `name` is blank `targetdir` will be `${rootdir}/app/root` otherwise it is `${rootdir}/app-${name}/root`.
+If `name` is blank `rootdir` will be `${librarydir}/app/root` otherwise it is `${librarydir}/app-${name}/root`.
 
 If `name` is blank `appdir` will be `${basedir}/app` otherwise it is `${basedir}/app-${name}`.
 
@@ -73,3 +73,5 @@ The value of `workdir` will be `${appdir}/work`.
 `workdir` is required to be in the same filesystem as `upperdir`
 
 Multiple values can be specified on `lowerdir` separated by colon, the first value will be the root, all next is required to be in the same tree.
+
+`initscript` and `shutdownscript` is called from host with an action string with value `init` or `shutdown` as firs argument, `rootdir` as second argument and `user` as third argument.

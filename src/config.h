@@ -3,20 +3,22 @@
 
 #include <stddef.h>
 
+#define VERSION "0.2.0-alpha"
+
 extern char config_unload;
 
-extern char *config_rootdir,
+extern char *config_librarydir,
 	*config_basedir,
 	*config_lowerdir,
 	*config_name,
 	*config_workdir,
 	*config_user,
 	*config_initscript,
-	*config_shutdownscript
+	*config_shutdownscript,
 	**config_volumes,
 	**config_command;
 
-extern size_t config_rootdir_size,
+extern size_t config_librarydir_size,
 	config_basedir_size,
 	config_lowerdir_size,
 	config_name_size,
@@ -29,7 +31,6 @@ extern size_t config_rootdir_size,
 	*config_volumes_sizes,
 	*config_command_sizes;
 
-// TODO: list for volume and command
-
+char config_parse(int, char*[]);
 
 #endif
