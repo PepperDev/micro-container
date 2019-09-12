@@ -35,6 +35,24 @@ buffer buffer_new_from(size_t length, const void *data)
 	return p;
 }
 
+buffer buffer_take(size_t capacity, size_t length, void *data)
+{
+	local_buffer *p = malloc(sizeof(local_buffer));
+	assert(p != NULL);
+	p->capacity = capacity;
+	p->length = length;
+	p->data = data;
+	return p;
+}
+
+buffer buffer_clone(buffer b)
+{
+	local_buffer *p = (local_buffer*)b;
+	local_buffer *n = (local_buffer*)buffer_new(p->capacity);
+	memcpy(n->data, p->data, p->length);
+	n->length = p->length;
+	return n;
+}
 
 void buffer_delete(buffer b)
 {

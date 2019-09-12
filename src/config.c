@@ -34,24 +34,20 @@ size_t config_librarydir_size = 0,
 
 static void print_version();
 static void print_help(char*);
-static char parse_arg_value(char*, char, char**, char*,	int*);
-static char parse_arg_list(char*, char, char***, char*,	int*);
-static void add_list(char***, char*);
+static char parse_arg_value(char*, char, char**, char*, int*);
+static char parse_arg_list(char*, char, size_t*, char***, char*, int*);
+static void add_list(size_t*, char***, char*);
 
 char config_parse(int argc, char *argv[])
 {
-	char moreargs = 1;
+	char moreargs = 1, name = 0;
 	char *carg, *narg;
 	for (int i = 1; i < argc; i++)
 	{
 		if (moreargs)
 		{
 			carg = argv[i];
-			if (carg == NULL || *carg == 0)
-			{
-				continue;
-			}
-			if (*carg == '-')
+			if (carg != NULL && *carg == '-')
 			{
 				carg++;
 				if (*carg == 0 && !config_unload)
@@ -87,14 +83,18 @@ char config_parse(int argc, char *argv[])
 							narg = NULL;
 						}
 					}
+					if (parse_arg_value(carg, 'n', &config_name,
+							narg, &i))
+					{
+						name = 1;
+						continue;
+					}
 					if (
 						parse_arg_value(carg, 'd', &config_librarydir,
 							narg, &i) ||
 						parse_arg_value(carg, 'b', &config_basedir,
 							narg, &i) ||
 						parse_arg_value(carg, 'l', &config_lowerdir,
-							narg, &i) ||
-						parse_arg_value(carg, 'n', &config_name,
 							narg, &i) ||
 						parse_arg_value(carg, 'w', &config_workdir,
 							narg, &i) ||
@@ -104,21 +104,30 @@ char config_parse(int argc, char *argv[])
 							narg, &i) ||
 						parse_arg_value(carg, 's', &config_shutdownscript,
 							narg, &i) ||
-						parse_arg_list(carg, 'v', &config_volumes,
-							narg, &i)
+						parse_arg_list(carg, 'v', &config_volumes_count,
+							&config_volumes, narg, &i)
 					)
 					{
 						continue;
 					}
 				}
-				if (config_name == NULL)
+			}
+			if (name)
+			{
+				moreargs = 0;
+			}
+			else
+			{
+				carg = argv[i];
+				if (carg != NULL && *carg != 0)
 				{
-					config_name = argv[i];
-					continue;
+					config_name = carg;
 				}
+				name = 1;
+				continue;
 			}
 		}
-		add_list(&config_command, argv[i]);
+		add_list(&config_command_count, &config_command, argv[i]);
 	}
 	return 0;
 }
@@ -159,29 +168,31 @@ static char parse_arg_value(char *arg, char value, char **target, char *next,
 	{
 		arg++;
 	}
+	if (*arg == 0)
+	{
+		return 0;
+	}
 	*target = arg;
 	return 1;
 
 }
 
-static char parse_arg_list(char *arg, char value, char ***target, char *next,
-	int *i)
+static char parse_arg_list(char *arg, char value, size_t *length,
+	char ***target, char *next, int *i)
 {
 	char *change = NULL;
 	if (parse_arg_value(arg, value, &change, next, i))
 	{
-		add_list(target, change);
+		add_list(length, target, change);
 		return 1;
 	}
 	return 0;
 }
 
-static void add_list(char ***target, char *value)
+static void add_list(size_t *length, char ***target, char *value)
 {
-	if (*target == NULL)
-	{
-		*target = malloc(sizeof(char**));
-		assert(*target != NULL);
-	}
-	// TODO: ...
+	*target = realloc(*target, (*length + 1) * sizeof(char**));
+	assert(*target != NULL);
+	(*target)[*length] = value;
+	(*length)++;
 }

@@ -7,6 +7,8 @@ typedef void *buffer;
 
 buffer buffer_new(size_t capacity);
 buffer buffer_new_from(size_t length, const void *data);
+buffer buffer_take(size_t capacity, size_t length, void *data);
+buffer buffer_clone(buffer p);
 
 void buffer_delete(buffer p);
 
