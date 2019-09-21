@@ -13,6 +13,7 @@ SOURCES = $(patsubst %,src/%.c, \
 		config \
 		io \
 		validate \
+		user \
 		buffer \
 	)
 
@@ -42,7 +43,8 @@ $(TARGET): $(OBJS) | bin
 
 .objs/config.o: src/config.h
 .objs/io.o: src/io.h
-.objs/validate.o: src/validate.h src/config.h src/io.h
+.objs/user.o: src/user.h
+.objs/validate.o: src/validate.h src/config.h src/io.h src/user.h
 .objs/buffer.o: src/buffer.h
 
 $(DIRS):

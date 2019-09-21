@@ -6,6 +6,7 @@
 #include "validate.h"
 #include "config.h"
 #include "io.h"
+#include "user.h"
 
 static void validate_special(const char*);
 static void validate_base();
@@ -22,7 +23,7 @@ static void resolve_path(char **path, size_t *len);
 void validate(const char *program)
 {
 	validate_special(program);
-	// validate_user();
+	user_collect();
 	validate_base();
 	validate_library();
 }
