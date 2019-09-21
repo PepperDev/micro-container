@@ -4,8 +4,8 @@
 #include <sys/types.h>
 #include <string.h>
 
-#include "io.h"
-#include "uid.h"
+#include "_io.h"
+#include "_uid.h"
 
 uid_t old_uid;
 

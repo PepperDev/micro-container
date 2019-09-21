@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#include "config_default.h"
+#include "_config_default.h"
 
 static void print_version();
 static void print_help();

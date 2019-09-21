@@ -1,14 +1,12 @@
 #ifndef IO_H
 #define IO_H
 
-char is_dir(const char *);
+char* io_realpath(const char*);
 
-char mkdirr(const char*);
+char io_isdir(const char*);
 
-char* which(const char*);
+char io_isrfile(const char*);
 
-char* readfile(const char*);
-
-void stream_copy(int, int);
+char io_mkdir(const char*);
 
 #endif

@@ -5,6 +5,17 @@
 
 #define VERSION "0.2.0-alpha"
 
+#define PATH_SEPARATOR "/"
+#define LIST_SEPARATOR ":"
+
+#define DEFAULT_LIBRARYDIR  "/var/lib/micro-container"
+#define DEFAULT_LOWERDIR    "/"
+#define DEFAULT_BASEAPPDIR  ".app"
+#define DEFAULT_APPEMPTYDIR "app"
+#define DEFAULT_APPNAMEDDIR "app-"
+#define DEFAULT_UPPERDIR    "upper"
+#define DEFAULT_WORKDIR     "work"
+
 extern char config_unload;
 
 extern char *config_librarydir,

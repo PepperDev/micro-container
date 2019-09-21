@@ -3,11 +3,11 @@
 #include <sys/utsname.h>
 #include <string.h>
 
-#include "var.h"
-#include "io.h"
-#include "config_default.h"
-#include "overlay.h"
-#include "container.h"
+#include "_var.h"
+#include "_io.h"
+#include "_config_default.h"
+#include "_overlay.h"
+#include "_container.h"
 
 static char* check_library();
 static char is_overlay_supported();

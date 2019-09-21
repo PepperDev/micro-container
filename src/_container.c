@@ -6,11 +6,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "var.h"
-#include "uid.h"
-#include "config_default.h"
-#include "user.h"
-#include "io.h"
+#include "_var.h"
+#include "_uid.h"
+#include "_config_default.h"
+#include "_user.h"
+#include "_io.h"
 
 // TODO: volumes, x11, pulse
 // /proc/self/mountinfo \040 -> space

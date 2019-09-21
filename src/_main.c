@@ -1,6 +1,6 @@
-#include "param.h"
-#include "mount.h"
-#include "credential.h"
+#include "_param.h"
+#include "_mount.h"
+#include "_credential.h"
 
 int main(int argc, char* argv[]) {
 	check_credential(argc, argv);

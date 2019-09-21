@@ -11,9 +11,9 @@
 #include <string.h>
 #include <fcntl.h>
 
-#include "uid.h"
-#include "var.h"
-#include "io.h"
+#include "_uid.h"
+#include "_var.h"
+#include "_io.h"
 
 static void find_user(const char*, const char*, const uid_t*, char**,
 	uid_t*, gid_t*, char**);
