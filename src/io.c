@@ -3,6 +3,8 @@
 #include <assert.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <string.h>
+#include <libgen.h>
 
 #include "io.h"
 
@@ -28,12 +30,35 @@ char io_isdir(const char *path)
 		S_ISDIR(fst.st_mode);
 }
 
-char io_isrfile(const char *path)
-{
-	// TODO: ...
-}
-
 char io_mkdir(const char *path)
 {
-	// TODO: ...
+	mode_t old_mask;
+	char *copy, *parent, ret;
+
+	if (io_isdir(path))
+	{
+		return 1;
+	}
+	if (!access(path, F_OK))
+	{
+		return 0;
+	}
+
+	copy = strdup(path);
+	parent = dirname(copy);
+	ret = io_mkdir(parent);
+	free(copy);
+	if (!ret)
+	{
+		return 0;
+	}
+
+	old_mask = umask(0);
+	ret = 1;
+	if (mkdir(path, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH))
+	{
+		ret = 0;
+	}
+	umask(old_mask);
+	return ret;
 }

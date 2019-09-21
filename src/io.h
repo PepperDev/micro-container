@@ -5,8 +5,6 @@ char* io_realpath(const char*);
 
 char io_isdir(const char*);
 
-char io_isrfile(const char*);
-
 char io_mkdir(const char*);
 
 #endif
