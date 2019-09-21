@@ -30,7 +30,7 @@ char io_isdir(const char *path)
 		S_ISDIR(fst.st_mode);
 }
 
-char io_mkdir(const char *path)
+char io_mkdir(const char *path, char usermode)
 {
 	mode_t old_mask;
 	char *copy, *parent, ret;
@@ -46,19 +46,46 @@ char io_mkdir(const char *path)
 
 	copy = strdup(path);
 	parent = dirname(copy);
-	ret = io_mkdir(parent);
+	ret = io_mkdir(parent, usermode);
 	free(copy);
 	if (!ret)
 	{
 		return 0;
 	}
 
-	old_mask = umask(0);
+	if (!usermode)
+	{
+		old_mask = umask(0);
+	}
 	ret = 1;
 	if (mkdir(path, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH))
 	{
 		ret = 0;
 	}
-	umask(old_mask);
+	if (!usermode)
+	{
+		umask(old_mask);
+	}
 	return ret;
+}
+
+char io_addmod(const char *path, unsigned int mode)
+{
+	struct stat fst;
+
+	if (stat(path, &fst))
+	{
+		return 0;
+	}
+
+	if ((fst.st_mode & mode) == mode)
+	{
+		return 1;
+	}
+
+	if (chmod(path, fst.st_mode | mode))
+	{
+		return 0;
+	}
+	return 1;
 }
