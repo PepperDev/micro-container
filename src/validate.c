@@ -49,7 +49,6 @@ static void validate_base()
 		buffer buf = buffer_new_from(user_home_size, user_home);
 		buffer_write_byte(buf, PATH_SEPARATOR);
 		buffer_write_data(buf, sizeof(DEFAULT_BASEAPPDIR), DEFAULT_BASEAPPDIR);
-		buffer_write_byte(buf, 0);
 		config_basedir = buffer_reuse(buf);
 	}
 

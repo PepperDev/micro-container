@@ -4,9 +4,10 @@ DESTDIR ?= /usr/local
 SOURCES = $(patsubst %,src/%.c, \
 		config \
 		io \
-		validate \
+		proc \
 		user \
 		buffer \
+		validate \
 		main \
 	)
 
@@ -29,9 +30,10 @@ $(TARGET): $(OBJS) | bin
 
 .objs/config.o: src/config.h
 .objs/io.o: src/io.h
-.objs/user.o: src/user.h
-.objs/validate.o: src/validate.h src/config.h src/io.h src/user.h src/buffer.h
+.objs/proc.o: src/proc.h
+.objs/user.o: src/user.h src/proc.h
 .objs/buffer.o: src/buffer.h
+.objs/validate.o: src/validate.h src/config.h src/io.h src/user.h src/buffer.h
 .objs/main.o: src/config.h src/validate.h
 
 $(DIRS):

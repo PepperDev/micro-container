@@ -5,8 +5,13 @@
 #include <sys/stat.h>
 #include <string.h>
 #include <libgen.h>
+#include <fcntl.h>
+#include <errno.h>
 
 #include "io.h"
+
+#define IO_BUFSIZE  4096
+#define IO_STEPSIZE 1024
 
 char* io_realpath(const char *path)
 {
@@ -33,8 +38,8 @@ char io_isdir(const char *path)
 char io_mkdir(
 	const char *path,
 	char usermode,
-	unsigned int uid,
-	unsigned int gid
+	uid_t uid,
+	gid_t gid
 )
 {
 	mode_t old_mask;
@@ -80,9 +85,9 @@ char io_mkdir(
 
 char io_addmod(
 	const char *path,
-	unsigned int mode,
-	unsigned int uid,
-	unsigned int gid
+	mode_t mode,
+	uid_t uid,
+	gid_t gid
 )
 {
 	struct stat fst;
@@ -110,4 +115,71 @@ char io_addmod(
 		return 0;
 	}
 	return 1;
+}
+
+size_t io_readfile(const char *file, char **buffer)
+{
+	int fd;
+	char *buf, *p;
+	off_t max, left;
+	ssize_t bread;
+	struct stat st;
+
+	*buffer = NULL;
+	for (;;)
+	{
+		errno = 0;
+		fd = open(file, O_RDONLY);
+		if (fd >= 0)
+		{
+			break;
+		}
+		else if (errno != EINTR)
+		{
+			return 0;
+		}
+	}
+
+	if (fstat(fd, &st))
+	{
+		max = IO_BUFSIZE;
+	}
+	else
+	{
+		max = st.st_size;
+		if (max == 0)
+		{
+			max = IO_BUFSIZE;
+		}
+	}
+
+	left = max;
+	buf = malloc(max + 1);
+	p = buf;
+	for (;;)
+	{
+		errno = 0;
+		bread = read(fd, p, left);
+		if (bread > 0)
+		{
+			p += bread;
+			left -= bread;
+			if (left <= 0) {
+				left += IO_STEPSIZE;
+				max += IO_STEPSIZE;
+				buf = realloc(buf, max + 1);
+				p = buf + max - left;
+			}
+		}
+		else if (errno != 0 && errno != EINTR && errno != EAGAIN)
+		{
+			free(buf);
+			close(fd);
+			return 0;
+		}
+	}
+	close(fd);
+	*p = 0;
+	*buffer = buf;
+	return buf - p;
 }

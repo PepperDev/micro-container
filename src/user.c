@@ -6,6 +6,7 @@
 #include <pwd.h>
 
 #include "user.h"
+#include "proc.h"
 
 #define USER_HOME "HOME"
 #define USER_SUDO_UID "SUDO_UID"
@@ -108,7 +109,22 @@ void user_require_caller()
 		return;
 	}
 
-	// TODO: pid_t ppid = getppid(); ...read /proc/%d/status
+	pid_t pid = getppid();
+	while (pid > 1)
+	{
+		uid_t uid;
+		gid_t gid;
+		if (proc_get_user(pid, &uid, &gid))
+		{
+			if (uid != user_effective_uid && uid != 0)
+			{
+				user_caller_uid = uid;
+				user_caller_gid = gid;
+				return;
+			}
+		}
+		pid = proc_get_parent(pid);
+	}
 
 	if (user_real_uid != 0)
 	{
