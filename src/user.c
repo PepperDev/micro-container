@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <pwd.h>
 
 #include "user.h"
 
@@ -37,10 +38,10 @@ void user_collect()
 
 static void user_collect_caller()
 {
-	if (user_effective_uid != user_real_uid && user_effective_uid != 0)
+	if (user_effective_uid != user_real_uid && user_real_uid != 0)
 	{
-		user_caller_uid = user_effective_uid;
-		user_caller_gid = user_effective_gid;
+		user_caller_uid = user_real_uid;
+		user_caller_gid = user_real_gid;
 		return;
 	}
 
@@ -79,7 +80,19 @@ void user_require_home()
 	}
 
 	user_require_caller();
-	// TODO: check if it is different than real uid's home
+
+	struct passwd *pwd = getpwuid(user_caller_uid);
+	if (pwd != NULL && pwd->pw_dir != NULL && *pwd->pw_dir != 0)
+	{
+		user_home = strdup(pwd->pw_dir);
+		user_home_size = strlen(user_home);
+		fprintf(
+			stderr,
+			"Warning: home not set, assuming caller home \"%s\"!\n",
+			user_home
+		);
+		return;
+	}
 
 	fprintf(
 		stderr,
@@ -97,15 +110,15 @@ void user_require_caller()
 
 	// TODO: pid_t ppid = getppid(); ...read /proc/%d/status
 
-	if (user_effective_uid != 0)
-	{
-		user_caller_uid = user_effective_uid;
-		user_caller_gid = user_effective_gid;
-	}
-	else
+	if (user_real_uid != 0)
 	{
 		user_caller_uid = user_real_gid;
 		user_caller_gid = user_real_gid;
+	}
+	else
+	{
+		user_caller_uid = user_effective_uid;
+		user_caller_gid = user_effective_gid;
 	}
 
 	fprintf(
