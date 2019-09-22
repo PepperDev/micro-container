@@ -30,7 +30,7 @@ void validate(const char *program)
 
 static void validate_special(const char *program)
 {
-	if (!io_addmod(program, S_ISUID))
+	if (!io_addmod(program, S_ISUID, 0, 0))
 	{
 		fprintf(
 			stderr,

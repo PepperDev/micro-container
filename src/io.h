@@ -7,6 +7,6 @@ char io_isdir(const char*);
 
 char io_mkdir(const char*, char);
 
-char io_addmod(const char*, unsigned int);
+char io_addmod(const char*, unsigned int, unsigned int, unsigned int);
 
 #endif

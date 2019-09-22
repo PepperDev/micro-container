@@ -66,12 +66,12 @@ char config_parse(int argc, char *argv[])
 					if (memcmp("version", carg, 8) == 0)
 					{
 						print_version();
-						return 1;
+						return 0;
 					}
 					if (memcmp("help", carg, 5) == 0)
 					{
 						print_help(argv[0]);
-						return 1;
+						return 0;
 					}
 				} else {
 					narg = NULL;
@@ -129,7 +129,7 @@ char config_parse(int argc, char *argv[])
 		}
 		add_list(&config_command_count, &config_command, argv[i]);
 	}
-	return 0;
+	return 1;
 }
 
 

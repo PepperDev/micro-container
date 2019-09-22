@@ -69,13 +69,26 @@ char io_mkdir(const char *path, char usermode)
 	return ret;
 }
 
-char io_addmod(const char *path, unsigned int mode)
+char io_addmod(
+	const char *path,
+	unsigned int mode,
+	unsigned int uid,
+	unsigned int gid
+)
 {
 	struct stat fst;
 
 	if (stat(path, &fst))
 	{
 		return 0;
+	}
+
+	if (fst.st_uid != uid || fst.st_gid != gid)
+	{
+		if (chown(path, uid, gid))
+		{
+			return 0;
+		}
 	}
 
 	if ((fst.st_mode & mode) == mode)
