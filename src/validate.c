@@ -7,6 +7,7 @@
 #include "config.h"
 #include "io.h"
 #include "user.h"
+#include "buffer.h"
 
 static void validate_special(const char*);
 static void validate_base();
@@ -42,7 +43,31 @@ static void validate_special(const char *program)
 
 static void validate_base()
 {
-	// TODO:...
+	if (config_basedir == NULL)
+	{
+		user_require_home();
+		buffer buf = buffer_new_from(user_home_size, user_home);
+		buffer_write_byte(buf, PATH_SEPARATOR);
+		buffer_write_data(buf, sizeof(DEFAULT_BASEAPPDIR), DEFAULT_BASEAPPDIR);
+		buffer_write_byte(buf, 0);
+		config_basedir = buffer_reuse(buf);
+	}
+
+	if (!io_isdir(config_basedir))
+	{
+		user_require_caller();
+		if (!io_mkdir(config_basedir, 1, user_caller_uid, user_caller_gid))
+		{
+			fprintf(
+				stderr,
+				"Fatal: unable to create library directory \"%s\"!\n",
+				config_basedir
+			);
+			exit(1);
+		}
+	}
+
+	resolve_path(&config_basedir, &config_basedir_size);
 }
 
 static void validate_library()
@@ -54,14 +79,14 @@ static void validate_library()
 
 	if (!io_isdir(config_librarydir))
 	{
-		if (!io_mkdir(config_librarydir, 0))
+		if (!io_mkdir(config_librarydir, 0, 0, 0))
 		{
 			fprintf(
 				stderr,
 				"Fatal: unable to create library directory \"%s\"!\n",
 				config_librarydir
 			);
-			abort();
+			exit(1);
 		}
 
 		chmod(config_librarydir, S_IRWXU);

@@ -17,4 +17,8 @@ extern size_t user_home_size;
 
 void user_collect();
 
+void user_require_home();
+
+void user_require_caller();
+
 #endif

@@ -30,7 +30,12 @@ char io_isdir(const char *path)
 		S_ISDIR(fst.st_mode);
 }
 
-char io_mkdir(const char *path, char usermode)
+char io_mkdir(
+	const char *path,
+	char usermode,
+	unsigned int uid,
+	unsigned int gid
+)
 {
 	mode_t old_mask;
 	char *copy, *parent, ret;
@@ -46,7 +51,7 @@ char io_mkdir(const char *path, char usermode)
 
 	copy = strdup(path);
 	parent = dirname(copy);
-	ret = io_mkdir(parent, usermode);
+	ret = io_mkdir(parent, usermode, uid, gid);
 	free(copy);
 	if (!ret)
 	{
@@ -62,7 +67,11 @@ char io_mkdir(const char *path, char usermode)
 	{
 		ret = 0;
 	}
-	if (!usermode)
+	if (usermode)
+	{
+		chown(path, uid, gid);
+	}
+	else
 	{
 		umask(old_mask);
 	}

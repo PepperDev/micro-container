@@ -5,8 +5,8 @@
 
 #define VERSION "0.2.0-alpha"
 
-#define PATH_SEPARATOR "/"
-#define LIST_SEPARATOR ":"
+#define PATH_SEPARATOR '/'
+#define LIST_SEPARATOR ':'
 
 #define DEFAULT_LIBRARYDIR  "/var/lib/micro-container"
 #define DEFAULT_LOWERDIR    "/"

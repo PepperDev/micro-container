@@ -2,6 +2,7 @@
 #include <sys/types.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "user.h"
 
@@ -20,7 +21,7 @@ gid_t user_real_gid = 0,
 char *user_home = NULL;
 size_t user_home_size = 0;
 
-char user_sudo = 0;
+char user_incomplete_caller = 0;
 
 static void user_collect_caller();
 
@@ -59,10 +60,59 @@ static void user_collect_caller()
 		}
 	}
 
-	// TODO: pid_t ppid = getppid(); ...read /proc/%d/status
+	user_incomplete_caller = 1;
+}
+
+void user_require_home()
+{
+	if (user_home != NULL)
+	{
+		return;
+	}
+
+	char *home = getenv(USER_HOME);
+	if (home != NULL && *home != 0)
+	{
+		user_home = strdup(home);
+		user_home_size = strlen(user_home);
+		return;
+	}
+
+	user_require_caller();
+	// TODO: check if it is different than real uid's home
 
 	fprintf(
 		stderr,
-		"Warning: unable to get caller uid\n"
+		"Fatal: unable to get caller home!\n"
 	);
+	exit(1);
+}
+
+void user_require_caller()
+{
+	if (!user_incomplete_caller)
+	{
+		return;
+	}
+
+	// TODO: pid_t ppid = getppid(); ...read /proc/%d/status
+
+	if (user_effective_uid != 0)
+	{
+		user_caller_uid = user_effective_uid;
+		user_caller_gid = user_effective_gid;
+	}
+	else
+	{
+		user_caller_uid = user_real_gid;
+		user_caller_gid = user_real_gid;
+	}
+
+	fprintf(
+		stderr,
+		"Warning: unable to get caller uid, assuming %d!\n",
+		user_caller_uid
+	);
+
+	user_incomplete_caller = 0;
 }
