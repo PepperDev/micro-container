@@ -120,6 +120,7 @@ void user_require_caller()
 			{
 				user_caller_uid = uid;
 				user_caller_gid = gid;
+				user_incomplete_caller = 0;
 				return;
 			}
 		}

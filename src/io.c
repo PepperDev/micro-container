@@ -120,7 +120,7 @@ char io_addmod(
 size_t io_readfile(const char *file, char **buffer)
 {
 	int fd;
-	char *buf, *p;
+	char *buf, *p, fullsize = 0;
 	off_t max, left;
 	ssize_t bread;
 	struct stat st;
@@ -140,17 +140,14 @@ size_t io_readfile(const char *file, char **buffer)
 		}
 	}
 
-	if (fstat(fd, &st))
+	if (fstat(fd, &st) || st.st_size == 0)
 	{
 		max = IO_BUFSIZE;
 	}
 	else
 	{
 		max = st.st_size;
-		if (max == 0)
-		{
-			max = IO_BUFSIZE;
-		}
+		fullsize = 1;
 	}
 
 	left = max;
@@ -164,7 +161,12 @@ size_t io_readfile(const char *file, char **buffer)
 		{
 			p += bread;
 			left -= bread;
-			if (left <= 0) {
+			if (left <= 0)
+			{
+				if (fullsize)
+				{
+					break;
+				}
 				left += IO_STEPSIZE;
 				max += IO_STEPSIZE;
 				buf = realloc(buf, max + 1);
@@ -176,6 +178,10 @@ size_t io_readfile(const char *file, char **buffer)
 			free(buf);
 			close(fd);
 			return 0;
+		}
+		else if (bread == 0 && errno == 0)
+		{
+			break;
 		}
 	}
 	close(fd);
