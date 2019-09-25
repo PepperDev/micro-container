@@ -45,13 +45,9 @@ char io_mkdir(
 	mode_t old_mask;
 	char *copy, *parent, ret;
 
-	if (io_isdir(path))
-	{
-		return 1;
-	}
 	if (!access(path, F_OK))
 	{
-		return 0;
+		return io_isdir(path);
 	}
 
 	copy = strdup(path);
