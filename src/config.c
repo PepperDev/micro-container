@@ -28,8 +28,13 @@ size_t config_librarydir_size = 0,
 	config_shutdownscript_size = 0,
 	config_volumes_count = 0,
 	config_command_count = 0,
-	*config_volumes_sizes = 0,
-	*config_command_sizes = 0;
+	*config_volumes_sizes = NULL,
+	*config_command_sizes = NULL;
+
+char **computed_lowerdirs = NULL;
+
+size_t computed_lowerdirs_count = 0,
+	*computed_lowerdirs_sizes = NULL;
 
 
 static void print_version();
@@ -191,7 +196,7 @@ static char parse_arg_list(char *arg, char value, size_t *length,
 
 static void add_list(size_t *length, char ***target, char *value)
 {
-	*target = realloc(*target, (*length + 1) * sizeof(char**));
+	*target = realloc(*target, (*length + 1) * sizeof(char*));
 	assert(*target != NULL);
 	(*target)[*length] = value;
 	(*length)++;

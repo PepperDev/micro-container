@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <assert.h>
 
 #include "validate.h"
 #include "config.h"
@@ -12,12 +13,14 @@
 static void validate_special(const char*);
 static void validate_base();
 static void validate_library();
-/*static void validate_lower();
-static void validate_name();
+static void validate_lower();
+/*static void validate_name();
 static void validate_work();
 static void validate_user();
 static void validate_volume();
 static void validate_scripts();*/
+
+static void add_computed_lower(char *path, size_t len);
 
 static void resolve_path(char **path, size_t *len);
 
@@ -27,6 +30,7 @@ void validate(const char *program)
 	user_collect();
 	validate_base();
 	validate_library();
+	validate_lower();
 }
 
 static void validate_special(const char *program)
@@ -92,6 +96,101 @@ static void validate_library()
 	}
 
 	resolve_path(&config_librarydir, &config_librarydir_size);
+}
+
+static void validate_lower()
+{
+	if (config_lowerdir == NULL)
+	{
+		config_lowerdir = DEFAULT_LOWERDIR;
+	}
+
+	char *pos = strchr(config_lowerdir, LIST_SEPARATOR);
+	if (pos != NULL)
+	{
+		*pos = 0;
+	}
+
+	if (!io_isdir(config_lowerdir))
+	{
+		fprintf(
+			stderr,
+			"Fatal: lower directory \"%s\" does not exists!\n",
+			config_lowerdir
+		);
+		exit(1);
+	}
+
+	if (pos == NULL)
+	{
+		config_lowerdir_size = strlen(config_lowerdir);
+	}
+	else
+	{
+		config_lowerdir_size = pos - config_lowerdir;
+		for (;;)
+		{
+			pos++;
+			if (*pos == 0)
+			{
+				break;
+			}
+			char *aux = pos;
+			pos = strchr(pos, LIST_SEPARATOR);
+			if (pos == NULL)
+			{
+				add_computed_lower(aux, strlen(aux));
+				break;
+			}
+			else
+			{
+				*pos = 0;
+				add_computed_lower(aux, pos - aux);
+			}
+		}
+	}
+}
+
+static void add_computed_lower(char *path, size_t len)
+{
+	if (
+		config_lowerdir_size > 0 &&
+		memcmp(config_lowerdir, path, config_lowerdir_size) != 0
+	)
+	{
+		fprintf(
+			stderr,
+			"Fatal: extra lower directory \"%s\" does not belongs to "
+			"base lower directory \"%s\"!\n",
+			path,
+			config_lowerdir
+		);
+		exit(1);
+	}
+
+	if (!io_isdir(path))
+	{
+		fprintf(
+			stderr,
+			"Fatal: extra lower directory \"%s\" does not exists!\n",
+			path
+		);
+		exit(1);
+	}
+
+	computed_lowerdirs = realloc(
+		computed_lowerdirs,
+		(computed_lowerdirs_count + 1) * sizeof(char*)
+	);
+	assert(computed_lowerdirs != NULL);
+	computed_lowerdirs_sizes = realloc(
+		computed_lowerdirs_sizes,
+		(computed_lowerdirs_count + 1) * sizeof(size_t)
+	);
+	assert(computed_lowerdirs_sizes != NULL);
+	computed_lowerdirs[computed_lowerdirs_count] = path;
+	computed_lowerdirs_sizes[computed_lowerdirs_count] = len;
+	computed_lowerdirs_count++;
 }
 
 static void resolve_path(char **path, size_t *len)
