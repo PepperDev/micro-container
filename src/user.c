@@ -34,6 +34,21 @@ void user_collect()
 	user_real_gid = getgid();
 	user_effective_gid = getegid();
 
+	if (
+		(
+			user_real_uid != 0 || user_effective_uid != 0
+		) && setreuid(0, 0) != 0 ||
+		(
+			user_real_gid != 0 || user_effective_gid != 0
+		) && setregid(0, 0) != 0
+	)
+	{
+		fprintf(
+			stderr,
+			"Warning: it was not able to escalate privileges to root!\n"
+		);
+	}
+
 	user_collect_caller();
 }
 
