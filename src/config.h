@@ -2,6 +2,7 @@
 #define CONFIG_H
 
 #include <stddef.h>
+#include <unistd.h>
 
 #define VERSION "0.2.0-alpha"
 
@@ -42,10 +43,15 @@ extern size_t config_librarydir_size,
 	*config_volumes_sizes,
 	*config_command_sizes;
 
-extern char **computed_lowerdirs;
+extern char **computed_lowerdirs,
+	computed_user_read;
 
 extern size_t computed_lowerdirs_count,
 	*computed_lowerdirs_sizes;
+
+extern uid_t computed_uid;
+
+extern gid_t computed_gid;
 
 char config_parse(int, char*[]);
 

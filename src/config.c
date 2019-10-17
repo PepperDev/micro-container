@@ -31,10 +31,15 @@ size_t config_librarydir_size = 0,
 	*config_volumes_sizes = NULL,
 	*config_command_sizes = NULL;
 
-char **computed_lowerdirs = NULL;
+char **computed_lowerdirs = NULL,
+	computed_user_read = 0;
 
 size_t computed_lowerdirs_count = 0,
 	*computed_lowerdirs_sizes = NULL;
+
+uid_t computed_uid = 0;
+
+gid_t computed_gid = 0;
 
 
 static void print_version();

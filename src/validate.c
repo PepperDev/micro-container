@@ -14,11 +14,15 @@ static void validate_special(const char*);
 static void validate_base();
 static void validate_library();
 static void validate_lower();
-/*static void validate_name();
-static void validate_work();
 static void validate_user();
-static void validate_volume();
-static void validate_scripts();*/
+/*
+static void validate_volumes();
+static void validate_scripts();
+static void compute_rootdir();
+static void compute_appdir();
+static void compute_upperdir(); //lower extras...
+static void compute_workdir();
+*/
 
 static void add_computed_lower(char *path, size_t len);
 
@@ -31,6 +35,7 @@ void validate(const char *program)
 	validate_base();
 	validate_library();
 	validate_lower();
+	validate_user();
 }
 
 static void validate_special(const char *program)
@@ -149,6 +154,37 @@ static void validate_lower()
 			}
 		}
 	}
+}
+
+static void validate_user()
+{
+	if (config_user == NULL)
+	{
+		user_require_caller();
+		computed_uid = user_caller_uid;
+		computed_gid = user_caller_gid;
+		computed_user_read = 1;
+		return;
+	}
+	computed_user_read = 0;
+	config_user_size = strlen(config_user);
+	char *pos = memchr(config_user, LIST_SEPARATOR, config_user_size);
+	if (pos == NULL)
+	{
+		return;
+	}
+	char *end;
+	computed_uid = strtoul(config_user, &end, 10);
+	if (end != pos)
+	{
+		return;
+	}
+	computed_gid = strtoul(pos + 1, &end, 10);
+	if (*end)
+	{
+		return;
+	}
+	computed_user_read = 1;
 }
 
 static void add_computed_lower(char *path, size_t len)
