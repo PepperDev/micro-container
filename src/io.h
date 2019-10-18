@@ -6,6 +6,8 @@
 
 char* io_realpath(const char*);
 
+char io_exists(const char*);
+
 char io_isdir(const char*);
 
 char io_mkdir(const char*, char, uid_t, gid_t);

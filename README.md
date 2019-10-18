@@ -68,9 +68,9 @@ If `name` is blank `appdir` will be `${basedir}/app` otherwise it is `${basedir}
 
 The value of `upperdir` will be `${appdir}/upper`.
 
-The value of `workdir` will be `${appdir}/work`.
+The value of `overlayworkdir` will be `${appdir}/work`.
 
-`workdir` is required to be in the same filesystem as `upperdir`
+`overlayworkdir` is required to be in the same filesystem as `upperdir`
 
 Multiple values can be specified on `lowerdir` separated by colon, the first value will be the root, all next is required to be in the same tree.
 

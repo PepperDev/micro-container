@@ -27,6 +27,11 @@ char* io_realpath(const char *path)
 	return resolved;
 }
 
+char io_exists(const char *path)
+{
+	return !access(path, F_OK);
+}
+
 char io_isdir(const char *path)
 {
 	struct stat fst;

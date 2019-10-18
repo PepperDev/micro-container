@@ -15,8 +15,8 @@ static void validate_base();
 static void validate_library();
 static void validate_lower();
 static void validate_user();
-/*
 static void validate_volumes();
+/*
 static void validate_scripts();
 static void compute_rootdir();
 static void compute_appdir();
@@ -36,6 +36,14 @@ void validate(const char *program)
 	validate_library();
 	validate_lower();
 	validate_user();
+	validate_volumes();
+/*
+	validate_scripts();
+	compute_rootdir();
+	compute_appdir();
+	compute_upperdir();
+	compute_workdir();
+*/
 }
 
 static void validate_special(const char *program)
@@ -185,6 +193,54 @@ static void validate_user()
 		return;
 	}
 	computed_user_read = 1;
+}
+
+static void validate_volumes()
+{
+	if (config_volumes_count == 0)
+	{
+		return;
+	}
+	config_volumes_sizes = malloc(config_volumes_count * sizeof(size_t));
+	assert(config_volumes_sizes != NULL);
+
+	size_t i = 0;
+	while (i < config_volumes_count)
+	{
+		config_volumes_sizes[i] = strlen(config_volumes[i]);
+		char *pos = memchr(
+			config_volumes[i],
+			LIST_SEPARATOR,
+			config_volumes_sizes[i]
+		);
+		if (pos != NULL)
+		{
+			*pos = 0;
+		}
+		if (!io_exists(config_volumes[i]))
+		{
+			fprintf(
+				stderr,
+				"Warning: volume \"%s\" does not exists!\n",
+				config_volumes[i]
+			);
+			if (config_volumes_count - i > 1)
+			{
+				memmove(
+					config_volumes + i * sizeof(char*),
+					config_volumes + (i + 1) * sizeof(char*),
+					(config_volumes_count - i - 1) * sizeof(char*)
+				);
+			}
+			config_volumes_count--;
+			continue;
+		}
+		if (pos != NULL)
+		{
+			*pos = LIST_SEPARATOR;
+		}
+		i++;
+	}
 }
 
 static void add_computed_lower(char *path, size_t len)
