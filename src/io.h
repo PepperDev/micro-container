@@ -10,6 +10,8 @@ char io_exists(const char*);
 
 char io_isdir(const char*);
 
+char io_isrunnable(const char*);
+
 char io_mkdir(const char*, char, uid_t, gid_t);
 
 char io_addmod(const char*, mode_t, uid_t, gid_t);

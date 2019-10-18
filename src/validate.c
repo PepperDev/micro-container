@@ -16,8 +16,8 @@ static void validate_library();
 static void validate_lower();
 static void validate_user();
 static void validate_volumes();
+static void validate_script_runnable(char**, size_t*, char*);
 /*
-static void validate_scripts();
 static void compute_rootdir();
 static void compute_appdir();
 static void compute_upperdir(); //lower extras...
@@ -37,8 +37,17 @@ void validate(const char *program)
 	validate_lower();
 	validate_user();
 	validate_volumes();
+	validate_script_runnable(
+		&config_initscript,
+		&config_initscript_size,
+		"init"
+	);
+	validate_script_runnable(
+		&config_shutdownscript,
+		&config_shutdownscript_size,
+		"shutdown"
+	);
 /*
-	validate_scripts();
 	compute_rootdir();
 	compute_appdir();
 	compute_upperdir();
@@ -240,6 +249,25 @@ static void validate_volumes()
 			*pos = LIST_SEPARATOR;
 		}
 		i++;
+	}
+}
+
+static void validate_script_runnable(char **path, size_t *size, char *label)
+{
+	if (*path == NULL)
+	{
+		return;
+	}
+	resolve_path(path, size);
+	if (!io_isrunnable(*path))
+	{
+		fprintf(
+			stderr,
+			"Warning: %sscript \"%s\" is not runnable!\n",
+			label,
+			*path
+		);
+		*path = NULL;
 	}
 }
 

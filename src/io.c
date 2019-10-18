@@ -40,6 +40,14 @@ char io_isdir(const char *path)
 		S_ISDIR(fst.st_mode);
 }
 
+char io_isrunnable(const char *path)
+{
+	struct stat fst;
+	return !access(path, X_OK) &&
+		!stat(path, &fst) &&
+		!S_ISDIR(fst.st_mode);
+}
+
 char io_mkdir(
 	const char *path,
 	char usermode,
