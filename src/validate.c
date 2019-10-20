@@ -20,9 +20,7 @@ static void validate_script_runnable(char**, size_t*, char*);
 static void compute_rootdir();
 static void compute_appdir();
 static void compute_upperdir();
-/*
 static void compute_workdir();
-*/
 
 static void check_inappdir(char*, char*);
 static void add_computed_lower(char*, size_t);
@@ -58,9 +56,7 @@ void validate(const char *program)
 	compute_appdir();
 	compute_rootdir();
 	compute_upperdir();
-/*
 	compute_workdir();
-*/
 }
 
 static void validate_special(const char *program)
@@ -381,6 +377,20 @@ static void compute_upperdir()
 		}
 		buffer_delete(buf);
 	}
+}
+
+static void compute_workdir()
+{
+	buffer buf = buffer_new_from(computed_appdir_size, computed_appdir);
+	buffer_write_byte(buf, PATH_SEPARATOR);
+	buffer_write_data(
+		buf,
+		sizeof(DEFAULT_WORKDIR),
+		DEFAULT_WORKDIR
+	);
+	computed_workdir_size = buffer_length(buf) - 1;
+	computed_workdir = buffer_reuse(buf);
+	check_inappdir(computed_workdir, "overlay's work");
 }
 
 static void check_inappdir(char *path, char *label)
