@@ -17,8 +17,8 @@ static void validate_lower();
 static void validate_user();
 static void validate_volumes();
 static void validate_script_runnable(char**, size_t*, char*);
-/*
 static void compute_rootdir();
+/*
 static void compute_appdir();
 static void compute_upperdir(); //lower extras...
 static void compute_workdir();
@@ -35,6 +35,14 @@ void validate(const char *program)
 	validate_base();
 	validate_library();
 	validate_lower();
+	if (config_name != NULL)
+	{
+		config_name_size = strlen(config_name);
+	}
+	if (config_workdir != NULL)
+	{
+		config_workdir_size = strlen(config_workdir);
+	}
 	validate_user();
 	validate_volumes();
 	validate_script_runnable(
@@ -47,8 +55,8 @@ void validate(const char *program)
 		&config_shutdownscript_size,
 		"shutdown"
 	);
-/*
 	compute_rootdir();
+/*
 	compute_appdir();
 	compute_upperdir();
 	compute_workdir();
@@ -269,6 +277,44 @@ static void validate_script_runnable(char **path, size_t *size, char *label)
 		);
 		*path = NULL;
 	}
+}
+
+static void compute_rootdir()
+{
+	buffer buf = buffer_new_from(config_librarydir_size, config_librarydir);
+	if (config_librarydir[config_librarydir_size - 1] != PATH_SEPARATOR)
+	{
+		buffer_write_byte(buf, PATH_SEPARATOR);
+	}
+	if (config_name == NULL)
+	{
+		buffer_write_data(
+			buf,
+			sizeof(DEFAULT_APPEMPTYDIR) - 1,
+			DEFAULT_APPEMPTYDIR
+		);
+	}
+	else
+	{
+		buffer_write_data(
+			buf,
+			sizeof(DEFAULT_APPEMPTYDIR) - 1,
+			DEFAULT_APPNAMEDDIR
+		);
+		buffer_write_data(
+			buf,
+			config_name_size,
+			config_name
+		);
+	}
+	buffer_write_byte(buf, PATH_SEPARATOR);
+	buffer_write_data(
+		buf,
+		sizeof(DEFAULT_ROOTDIR),
+		DEFAULT_ROOTDIR
+	);
+	computed_rootdir_size = buffer_length(buf) - 1;
+	computed_rootdir = buffer_reuse(buf);
 }
 
 static void add_computed_lower(char *path, size_t len)

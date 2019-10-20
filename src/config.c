@@ -32,9 +32,17 @@ size_t config_librarydir_size = 0,
 	*config_command_sizes = NULL;
 
 char **computed_lowerdirs = NULL,
+	*computed_rootdir = NULL,
+	*computed_appdir = NULL,
+	*computed_upperdir = NULL,
+	*computed_workdir = NULL,
 	computed_user_read = 0;
 
-size_t computed_lowerdirs_count = 0,
+size_t computed_rootdir_size = 0,
+	computed_appdir_size = 0,
+	computed_upperdir_size = 0,
+	computed_workdir_size = 0,
+	computed_lowerdirs_count = 0,
 	*computed_lowerdirs_sizes = NULL;
 
 uid_t computed_uid = 0;

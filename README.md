@@ -1,6 +1,8 @@
 # Micro-container
 If you are tired of the huge footprint Docker deamon does on your system it is made for you, a simply and easy container isolation software, you can run applications on jail without requiring any deamon running forever.
 
+**Warning**: this software is considered to be insecure, it can let unprivileged users to run instructions as root and potentially damaging your system, use it at your own risk.
+
 ## Examples
 To run a container based on your own host system:
 
@@ -74,4 +76,4 @@ The value of `overlayworkdir` will be `${appdir}/work`.
 
 Multiple values can be specified on `lowerdir` separated by colon, the first value will be the root, all next is required to be in the same tree.
 
-`initscript` and `shutdownscript` is called from host with an action string with value `init` or `shutdown` as firs argument, `rootdir` as second argument and `user` as third argument.
+`initscript` and `shutdownscript` is called from host with an action string with value `init` or `shutdown` as first argument, `rootdir` as second argument and `uid` as third argument and `gid` as forth argument.
