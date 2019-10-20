@@ -19,14 +19,14 @@ static void validate_volumes();
 static void validate_script_runnable(char**, size_t*, char*);
 static void compute_rootdir();
 static void compute_appdir();
+static void compute_upperdir();
 /*
-static void compute_upperdir(); //lower extras...
 static void compute_workdir();
 */
 
-static void add_computed_lower(char *path, size_t len);
-
-static void resolve_path(char **path, size_t *len);
+static void check_inappdir(char*, char*);
+static void add_computed_lower(char*, size_t);
+static void resolve_path(char**, size_t*);
 
 void validate(const char *program)
 {
@@ -57,8 +57,8 @@ void validate(const char *program)
 	);
 	compute_appdir();
 	compute_rootdir();
-/*
 	compute_upperdir();
+/*
 	compute_workdir();
 */
 }
@@ -86,19 +86,7 @@ static void validate_base()
 		config_basedir = buffer_reuse(buf);
 	}
 
-	if (!io_isdir(config_basedir))
-	{
-		user_require_caller();
-		if (!io_mkdir(config_basedir, 1, user_caller_uid, user_caller_gid))
-		{
-			fprintf(
-				stderr,
-				"Fatal: unable to create library directory \"%s\"!\n",
-				config_basedir
-			);
-			exit(1);
-		}
-	}
+	check_inappdir(config_basedir, "library");
 
 	resolve_path(&config_basedir, &config_basedir_size);
 }
@@ -359,15 +347,54 @@ static void compute_appdir()
 	}
 	computed_appdir_size = buffer_length(buf) - 1;
 	computed_appdir = buffer_reuse(buf);
-	if (!io_isdir(computed_appdir))
+	check_inappdir(computed_appdir, "app");
+}
+
+static void compute_upperdir()
+{
+	buffer buf = buffer_new_from(computed_appdir_size, computed_appdir);
+	buffer_write_byte(buf, PATH_SEPARATOR);
+	buffer_write_data(
+		buf,
+		sizeof(DEFAULT_UPPERDIR),
+		DEFAULT_UPPERDIR
+	);
+	computed_upperdir_size = buffer_length(buf) - 1;
+	computed_upperdir = buffer_reuse(buf);
+	check_inappdir(computed_upperdir, "upper");
+
+	if (computed_lowerdirs_count > 0)
+	{
+		buf = buffer_new_from(computed_upperdir_size, computed_upperdir);
+		buffer_write_byte(buf, PATH_SEPARATOR);
+		for (size_t i = 0; i < computed_lowerdirs_count; i++)
+		{
+			buffer nbuf = buffer_clone(buf);
+			buffer_write_data(
+				nbuf,
+				computed_lowerdirs_sizes[i] + 1,
+				computed_lowerdirs[i]
+			);
+			char *path = buffer_reuse(nbuf);
+			check_inappdir(path, "extra upper");
+			free(path);
+		}
+		buffer_delete(buf);
+	}
+}
+
+static void check_inappdir(char *path, char *label)
+{
+	if (!io_isdir(path))
 	{
 		user_require_caller();
-		if (!io_mkdir(computed_appdir, 1, user_caller_uid, user_caller_gid))
+		if (!io_mkdir(path, 1, user_caller_uid, user_caller_gid))
 		{
 			fprintf(
 				stderr,
-				"Fatal: unable to create appdir directory \"%s\"!\n",
-				computed_appdir
+				"Fatal: unable to create %s directory \"%s\"!\n",
+				label,
+				path
 			);
 			exit(1);
 		}
