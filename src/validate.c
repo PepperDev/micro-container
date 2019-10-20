@@ -18,8 +18,8 @@ static void validate_user();
 static void validate_volumes();
 static void validate_script_runnable(char**, size_t*, char*);
 static void compute_rootdir();
-/*
 static void compute_appdir();
+/*
 static void compute_upperdir(); //lower extras...
 static void compute_workdir();
 */
@@ -55,9 +55,9 @@ void validate(const char *program)
 		&config_shutdownscript_size,
 		"shutdown"
 	);
+	compute_appdir();
 	compute_rootdir();
 /*
-	compute_appdir();
 	compute_upperdir();
 	compute_workdir();
 */
@@ -315,6 +315,63 @@ static void compute_rootdir()
 	);
 	computed_rootdir_size = buffer_length(buf) - 1;
 	computed_rootdir = buffer_reuse(buf);
+	if (!io_isdir(computed_rootdir))
+	{
+		if (!io_mkdir(computed_rootdir, 0, 0, 0))
+		{
+			fprintf(
+				stderr,
+				"Fatal: unable to create rootdir directory \"%s\"!\n",
+				computed_rootdir
+			);
+			exit(1);
+		}
+	}
+}
+
+static void compute_appdir()
+{
+	buffer buf = buffer_new_from(config_basedir_size, config_basedir);
+	if (config_basedir[config_basedir_size - 1] != PATH_SEPARATOR)
+	{
+		buffer_write_byte(buf, PATH_SEPARATOR);
+	}
+	if (config_name == NULL)
+	{
+		buffer_write_data(
+			buf,
+			sizeof(DEFAULT_APPEMPTYDIR),
+			DEFAULT_APPEMPTYDIR
+		);
+	}
+	else
+	{
+		buffer_write_data(
+			buf,
+			sizeof(DEFAULT_APPEMPTYDIR) - 1,
+			DEFAULT_APPNAMEDDIR
+		);
+		buffer_write_data(
+			buf,
+			config_name_size + 1,
+			config_name
+		);
+	}
+	computed_appdir_size = buffer_length(buf) - 1;
+	computed_appdir = buffer_reuse(buf);
+	if (!io_isdir(computed_appdir))
+	{
+		user_require_caller();
+		if (!io_mkdir(computed_appdir, 1, user_caller_uid, user_caller_gid))
+		{
+			fprintf(
+				stderr,
+				"Fatal: unable to create appdir directory \"%s\"!\n",
+				computed_appdir
+			);
+			exit(1);
+		}
+	}
 }
 
 static void add_computed_lower(char *path, size_t len)

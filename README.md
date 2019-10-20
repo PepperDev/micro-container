@@ -19,9 +19,9 @@ To run an Alpine based system:
             sudo tar -xJv -C /var/lib/micro-container/root-alpine
     fi
     # Then simply:
-    $ container alpine
+    container -l /var/lib/micro-container/root-alpine -n alpine
     # Easy peasy, if you want other name than alpine, just inform the root
-    $ container -l /var/lib/micro-container/root-alpine -n other-container-name
+    container -l /var/lib/micro-container/root-alpine -n other-container-name
 
 ## Usage
 	container [-] [-d librarydir] [-b basedir] [-l lowerdir] [-n name] [-w workdir] [-u user:group] [[-v hostvolume:guestvolume]...] [-i initscript] [-s shutdownscript] [[--] command args...]
@@ -47,7 +47,7 @@ To run an Alpine based system:
 	command - default to blank
 
 ## Download
-Not avaiable yet, comming soon...
+Download the avaiable version at [releases](https://github.com/PepperDev/micro-container/releases) page.
 
 ## Build
 `$ make`
