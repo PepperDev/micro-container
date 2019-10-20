@@ -9,6 +9,7 @@ SOURCES = $(patsubst %,src/%.c, \
 		buffer \
 		validate \
 		main \
+		mount \
 	)
 
 OBJS    = $(SOURCES:src/%.c=.objs/%.o)
@@ -34,7 +35,8 @@ $(TARGET): $(OBJS) | bin
 .objs/user.o: src/user.h src/proc.h
 .objs/buffer.o: src/buffer.h
 .objs/validate.o: src/validate.h src/config.h src/io.h src/user.h src/buffer.h
-.objs/main.o: src/config.h src/validate.h
+.objs/mount.o: src/mount.h src/config.h src/io.h
+.objs/main.o: src/config.h src/validate.h src/mount.h
 
 $(DIRS):
 	-mkdir -p $@

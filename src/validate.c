@@ -56,7 +56,10 @@ void validate(const char *program)
 	compute_appdir();
 	compute_rootdir();
 	compute_upperdir();
-	compute_workdir();
+	if (io_isoverlaysupported())
+	{
+		compute_workdir();
+	}
 }
 
 static void validate_special(const char *program)

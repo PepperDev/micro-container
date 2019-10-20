@@ -18,4 +18,6 @@ char io_addmod(const char*, mode_t, uid_t, gid_t);
 
 size_t io_readfile(const char*, char**);
 
+char io_isoverlaysupported();
+
 #endif

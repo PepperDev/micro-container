@@ -7,11 +7,16 @@
 #include <libgen.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <sys/utsname.h>
+#include <stdio.h>
 
 #include "io.h"
 
 #define IO_BUFSIZE  4096
 #define IO_STEPSIZE 1024
+
+static char overlay_read = 0,
+	overlay_supported = 0;
 
 char* io_realpath(const char *path)
 {
@@ -197,4 +202,20 @@ size_t io_readfile(const char *file, char **buffer)
 	*p = 0;
 	*buffer = buf;
 	return buf - p;
+}
+
+char io_isoverlaysupported()
+{
+	if (!overlay_read)
+	{
+		struct utsname suname;
+		if (!uname(&suname))
+		{
+			int major, minor;
+			sscanf(suname.release, "%d.%d.%*s", &major, &minor);
+			overlay_supported = major > 3 || (major == 3 && minor >= 18);
+			overlay_read = 1;
+		}
+	}
+	return overlay_supported;
 }

@@ -1,5 +1,6 @@
 #include "config.h"
 #include "validate.h"
+#include "mount.h"
 
 int main(int argc, char *argv[])
 {
@@ -9,5 +10,9 @@ int main(int argc, char *argv[])
 	}
 
 	validate(argv[0]);
+
+	prepare_mounts();
+
+	//launch
 	return 0;
 }
