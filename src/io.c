@@ -201,7 +201,7 @@ size_t io_readfile(const char *file, char **buffer)
 	close(fd);
 	*p = 0;
 	*buffer = buf;
-	return buf - p;
+	return p - buf;
 }
 
 char io_isoverlaysupported()

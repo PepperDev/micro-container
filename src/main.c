@@ -1,6 +1,8 @@
 #include "config.h"
 #include "validate.h"
 #include "mount.h"
+#include "launch.h"
+#include "unload.h"
 
 int main(int argc, char *argv[])
 {
@@ -11,8 +13,14 @@ int main(int argc, char *argv[])
 
 	validate(argv[0]);
 
-	prepare_mounts();
+	if (!config_unload)
+	{
+		prepare_mounts();
 
-	//launch
+		launch();
+	}
+
+	unload();
+
 	return 0;
 }
