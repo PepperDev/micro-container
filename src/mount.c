@@ -44,8 +44,8 @@ void prepare_mounts()
 	pid_t pid = vfork();
 	if (pid != 0) {
 		waitpid(pid, NULL, 0);
-		exit(EXIT_SUCCESS);
 		// TODO: unload?
+		exit(EXIT_SUCCESS);
 	}
 
 	mount_overlay(
@@ -84,7 +84,17 @@ void prepare_mounts()
 		"/sys", 4, "sysfs", MS_NOSUID | MS_NOEXEC | MS_NODEV, NULL
 	);
 
-	// TODO: if upperdir is rotational then tmpfs /tmp and /var/tmp
+	if (!io_isrotational(computed_upperdir))
+	{
+		mount_type(
+			computed_rootdir, computed_rootdir_size,
+			"/tmp", 4, "tmpfs", MS_NOSUID | MS_NODEV | MS_NOATIME, NULL
+		);
+		mount_type(
+			computed_rootdir, computed_rootdir_size,
+			"/var/tmp", 8, "tmpfs", MS_NOSUID | MS_NODEV | MS_NOATIME, NULL
+		);
+	}
 
 	mount_type(
 		computed_rootdir, computed_rootdir_size,
@@ -100,7 +110,15 @@ void prepare_mounts()
 		"/run/user", 9
 	);
 
-	// TODO: /etc/resolv.conf
+	char *resolv = compose_path(
+		computed_rootdir, computed_rootdir_size,
+		"/etc/resolv.conf", 16, NULL
+	);
+	if (io_islink(resolv))
+	{
+		// TODO: ...
+	}
+
 	// TODO: /dev/shm
 
 	mount_type(
@@ -114,8 +132,11 @@ void prepare_mounts()
 	// TODO: /run/screen
 
 	// TODO: cp /etc/resolv.conf
+	free(resolv);
 
 	// TODO: /run/user/[uid]/pulse
+
+	// TODO: mount bind volumes
 }
 
 static void buffer_append_opt(buffer buf, char *data, size_t size)

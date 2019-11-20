@@ -12,6 +12,10 @@ char io_isdir(const char*);
 
 char io_isrunnable(const char*);
 
+char io_islink(const char*);
+
+char io_isrotational(const char*);
+
 char io_mkdir(const char*, char, uid_t, gid_t);
 
 char io_addmod(const char*, mode_t, uid_t, gid_t);

@@ -1,5 +1,6 @@
 #include <unistd.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "launch.h"
 #include "config.h"
@@ -20,7 +21,7 @@ void launch()
 	// TODO: compute user
 	// TODO: change user
 	// TODO: compute shell if no command
-	const char *argv[] = {"-bash", NULL};
+	char *argv[] = {"-bash", NULL};
 	execv("/bin/bash", argv);
 	fprintf(
 		stderr,

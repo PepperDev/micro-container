@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <sys/utsname.h>
 #include <stdio.h>
+#include <sys/sysmacros.h>
 
 #include "io.h"
 
@@ -51,6 +52,35 @@ char io_isrunnable(const char *path)
 	return !access(path, X_OK) &&
 		!stat(path, &fst) &&
 		!S_ISDIR(fst.st_mode);
+}
+
+char io_islink(const char *path)
+{
+	struct stat fst;
+	return !access(path, F_OK) &&
+		!stat(path, &fst) &&
+		S_ISLNK(fst.st_mode);
+}
+
+char io_isrotational(const char *path)
+{
+	struct stat fst;
+	if (access(path, F_OK) || stat(path, &fst))
+	{
+		return 0;
+	}
+	char *rpath = malloc(65);
+	assert(rpath != NULL);
+	assert(snprintf(
+		rpath,
+		65,
+		"/sys/dev/block/%d:%d/../queue/rotational",
+		major(fst.st_dev),
+		minor(fst.st_dev)
+	) < 65);
+	char *buf;
+	return access(rpath, F_OK) || io_readfile(rpath, &buf) < 1 ||
+		buf == NULL || buf[0] == 0 || buf[0] != '0';
 }
 
 char io_mkdir(
