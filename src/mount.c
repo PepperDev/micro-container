@@ -5,31 +5,39 @@
 #include <stdio.h>
 #include <sys/mount.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "mount.h"
 #include "config.h"
 #include "buffer.h"
 #include "io.h"
 
-static char* compose_path(char*, size_t, char*, size_t, size_t*);
+static const char PATH_DEV_SHM[] = "/dev/shm";
+static const char TYPE_TMPFS[]   = "tmpfs";
 
-static void buffer_append_opt(buffer, char*, size_t);
+static char* compose_path(const char*, size_t, const char*, size_t, size_t*);
 
-static void mount_overlay(char*, char*, size_t, char*, size_t, char*, size_t);
+static void buffer_append_opt(buffer, const char*, size_t);
+
+static void mount_overlay(
+	const char*, const char*, size_t,
+	const char*, size_t, const char*, size_t
+);
 
 static void mount_overlay_extra(
-	char*, size_t, char*, size_t,
-	char*, size_t, char*, size_t,
-	char*, size_t, size_t
+	const char*, size_t, const char*, size_t,
+	const char*, size_t, const char*, size_t,
+	const char*, size_t, size_t
 );
 
-static void mount_bind(char*, size_t, char*, size_t);
+static void mount_bind(const char*, size_t, const char*, size_t);
 
 static void mount_type(
-	char*, size_t, char*, size_t, char*, unsigned long, void*
+	const char*, size_t, const char*, size_t,
+	const char*, unsigned long, const void*
 );
 
-static void root_mkdir(char*, size_t, char*, size_t);
+static void root_mkdir(const char*, size_t, const char*, size_t);
 
 void prepare_mounts()
 {
@@ -88,22 +96,26 @@ void prepare_mounts()
 	{
 		mount_type(
 			computed_rootdir, computed_rootdir_size,
-			"/tmp", 4, "tmpfs", MS_NOSUID | MS_NODEV | MS_NOATIME, NULL
+			"/tmp", 4, TYPE_TMPFS, MS_NOSUID | MS_NODEV | MS_NOATIME, NULL
 		);
 		mount_type(
 			computed_rootdir, computed_rootdir_size,
-			"/var/tmp", 8, "tmpfs", MS_NOSUID | MS_NODEV | MS_NOATIME, NULL
+			"/var/tmp", 8, TYPE_TMPFS, MS_NOSUID | MS_NODEV | MS_NOATIME, NULL
 		);
 	}
 
 	mount_type(
 		computed_rootdir, computed_rootdir_size,
-		"/run", 4, "tmpfs", MS_NOSUID | MS_NOEXEC, "mode=0755"
+		"/run", 4, TYPE_TMPFS, MS_NOSUID | MS_NOEXEC, "mode=0755"
 	);
 
-	root_mkdir(
+	char *lock = compose_path(
 		computed_rootdir, computed_rootdir_size,
-		"/run/lock", 9
+		"/run/lock", 9, NULL
+	);
+	root_mkdir(
+		NULL, 0,
+		lock, 0
 	);
 	root_mkdir(
 		computed_rootdir, computed_rootdir_size,
@@ -116,15 +128,68 @@ void prepare_mounts()
 	);
 	if (io_islink(resolv))
 	{
-		// TODO: ...
+		// TODO: resolv path...
 	}
 
-	// TODO: /dev/shm
+	char *shm = NULL;
+	if (io_islink(PATH_DEV_SHM))
+	{
+		char *path = io_realpath(PATH_DEV_SHM);
+		if (path == NULL)
+		{
+			fprintf(
+				stderr,
+				"Fatal: unable to compute shared memory path!\n"
+			);
+			exit(1);
+		}
+		shm = compose_path(
+			computed_rootdir, computed_rootdir_size,
+			path, strlen(path), NULL
+		);
+		free(path);
+		if (!io_isdir(shm) && !io_mkdir(shm, 0, 0, 0))
+		{
+			fprintf(
+				stderr,
+				"Fatal: unable to create directory \"%s\"!\n",
+				shm
+			);
+			exit(1);
+		}
+	}
+	else
+	{
+		shm = compose_path(
+			computed_rootdir, computed_rootdir_size,
+			PATH_DEV_SHM, sizeof(PATH_DEV_SHM) - 1, NULL
+		);
+		char *path = compose_path(
+			computed_rootdir, computed_rootdir_size,
+			"/run/shm", 8, NULL
+		);
+		if (!io_symlink(PATH_DEV_SHM, path))
+		{
+			fprintf(
+				stderr,
+				"Fatal: unable to create symbolic link \"%s\"!\n",
+				path
+			);
+			exit(1);
+		}
+		free(path);
+	}
+	mount_type(
+		NULL, 0, shm, 0,
+		TYPE_TMPFS, MS_NOSUID | MS_NODEV, NULL
+	);
+	free(shm);
 
 	mount_type(
-		computed_rootdir, computed_rootdir_size,
-		"/run/lock", 9, "tmpfs", MS_NOSUID | MS_NOEXEC | MS_NODEV, NULL
+		NULL, 0, lock, 0,
+		TYPE_TMPFS, MS_NOSUID | MS_NOEXEC | MS_NODEV, NULL
 	);
+	free(lock);
 
 	// TODO: /run/user/[uid]
 	// TODO: /sys/fs/cgroup
@@ -134,16 +199,17 @@ void prepare_mounts()
 	// TODO: cp /etc/resolv.conf
 	free(resolv);
 
+	// TODO: force user discover?
 	// TODO: /run/user/[uid]/pulse
 
 	// TODO: mount bind volumes
 }
 
-static void buffer_append_opt(buffer buf, char *data, size_t size)
+static void buffer_append_opt(buffer buf, const char *data, size_t size)
 {
-	char *last = data;
-	char *pos = data;
-	char *end = data + size;
+	char *pos = (char*) data;
+	char *last = pos;
+	char *end = pos + size;
 
 	while (pos < end)
 	{
@@ -167,7 +233,8 @@ static void buffer_append_opt(buffer buf, char *data, size_t size)
 }
 
 static char* compose_path(
-	char *root, size_t root_size, char *dir, size_t dir_size, size_t *size
+	const char *root, size_t root_size,
+	const char *dir, size_t dir_size, size_t *size
 )
 {
 	buffer buf = buffer_new_from(root_size, root);
@@ -190,8 +257,8 @@ static char* compose_path(
 }
 
 static void mount_overlay(
-	char *root, char *lower, size_t lower_size,
-	char *upper, size_t upper_size, char *work, size_t work_size
+	const char *root, const char *lower, size_t lower_size,
+	const char *upper, size_t upper_size, const char *work, size_t work_size
 )
 {
 	char *type = "overlayfs";
@@ -230,9 +297,9 @@ static void mount_overlay(
 }
 
 static void mount_overlay_extra(
-	char *root, size_t root_size, char *lower, size_t lower_size,
-	char *upper, size_t upper_size, char *work, size_t work_size,
-	char *extra, size_t extra_size, size_t id
+	const char *root, size_t root_size, const char *lower, size_t lower_size,
+	const char *upper, size_t upper_size, const char *work, size_t work_size,
+	const char *extra, size_t extra_size, size_t id
 )
 {
 	// TODO: concatenate upper and work directories
@@ -241,7 +308,7 @@ static void mount_overlay_extra(
 }
 
 static void mount_bind(
-	char *root, size_t root_size, char *bind, size_t bind_size
+	const char *root, size_t root_size, const char *bind, size_t bind_size
 )
 {
 	char *point = compose_path(root, root_size, bind, bind_size, NULL);
@@ -267,11 +334,20 @@ static void mount_bind(
 }
 
 static void mount_type(
-	char *root, size_t root_size, char *point, size_t point_size, char *type,
-	unsigned long flags, void *data
+	const char *root, size_t root_size,
+	const char *point, size_t point_size,
+	const char *type, unsigned long flags, const void *data
 )
 {
-	char *full = compose_path(root, root_size, point, point_size, NULL);
+	char *full;
+	if (root == NULL)
+	{
+		full = (char*) point;
+	}
+	else
+	{
+		full = compose_path(root, root_size, point, point_size, NULL);
+	}
 	if (mount(type, full, type, flags, data))
 	{
 		fprintf(
@@ -282,12 +358,26 @@ static void mount_type(
 		);
 		exit(1);
 	}
-	free(full);
+	if (root != NULL)
+	{
+		free(full);
+	}
 }
 
-static void root_mkdir(char *root, size_t root_size, char *dir, size_t dir_size)
+static void root_mkdir(
+	const char *root, size_t root_size,
+	const char *dir, size_t dir_size
+)
 {
-	char *full = compose_path(root, root_size, dir, dir_size, NULL);
+	char *full;
+	if (root == NULL)
+	{
+		full = (char*) dir;
+	}
+	else
+	{
+		full = compose_path(root, root_size, dir, dir_size, NULL);
+	}
 	if (!io_mkdir(full, 0, 0, 0))
 	{
 		fprintf(
@@ -296,5 +386,8 @@ static void root_mkdir(char *root, size_t root_size, char *dir, size_t dir_size)
 			full
 		);
 	}
-	free(full);
+	if (root != NULL)
+	{
+		free(full);
+	}
 }

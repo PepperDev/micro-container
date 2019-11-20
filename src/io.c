@@ -83,6 +83,11 @@ char io_isrotational(const char *path)
 		buf == NULL || buf[0] == 0 || buf[0] != '0';
 }
 
+char io_symlink(const char *target, const char *path)
+{
+	return !symlink(target, path);
+}
+
 char io_mkdir(
 	const char *path,
 	char usermode,

@@ -16,6 +16,8 @@ char io_islink(const char*);
 
 char io_isrotational(const char*);
 
+char io_symlink(const char*, const char*);
+
 char io_mkdir(const char*, char, uid_t, gid_t);
 
 char io_addmod(const char*, mode_t, uid_t, gid_t);
