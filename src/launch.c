@@ -21,8 +21,9 @@ void launch()
 	// TODO: compute user
 	// TODO: change user
 	// TODO: compute shell if no command
+	// TODO: reset env? or compute env?
 	char *argv[] = {"-bash", NULL};
-	execv("/bin/bash", argv);
+	execve("/bin/bash", argv, NULL);
 	fprintf(
 		stderr,
 		"Warning: unable to launch command!\n"

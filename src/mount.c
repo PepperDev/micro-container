@@ -41,7 +41,7 @@ static void root_mkdir(const char*, size_t, const char*, size_t);
 
 void prepare_mounts()
 {
-	if (unshare(CLONE_NEWNS | CLONE_NEWPID))
+	if (unshare(CLONE_NEWNS | CLONE_NEWPID | CLONE_NEWCGROUP))
 	{
 		fprintf(
 			stderr,
