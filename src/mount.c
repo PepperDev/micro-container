@@ -6,6 +6,7 @@
 #include <sys/mount.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "mount.h"
 #include "config.h"
@@ -41,6 +42,16 @@ static void root_mkdir(const char*, size_t, const char*, size_t);
 
 void prepare_mounts()
 {
+	/*
+	setsid();
+	if (setpgrp())
+	{
+		fprintf(
+			stderr,
+			"Warning: unable to set process group!\n"
+		);
+	}
+	*/
 	if (unshare(CLONE_NEWNS | CLONE_NEWPID | CLONE_NEWCGROUP))
 	{
 		fprintf(
