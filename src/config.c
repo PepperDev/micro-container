@@ -1,7 +1,6 @@
 #include "config.h"
 #include <stdio.h>
 #include <string.h>
-#include <assert.h>
 
 static bool parse_arg_print(char *, char, void (*)(char *), char *);
 
@@ -67,7 +66,7 @@ bool config_parse(config_t * config, int argc, char *argv[])
 
 static bool parse_arg_print(char *arg, char value, void (*print)(char *), char *param)
 {
-    if(arg[1] == value && arg[2] == 0) {
+    if (arg[1] == value && arg[2] == 0) {
         print(param);
         return true;
     }
@@ -78,6 +77,10 @@ static bool parse_arg_value(char *arg, char value, char **target, char *next, in
 {
     if (arg[1] == value) {
         if (arg[2] == 0) {
+            if (next == NULL) {
+                fprintf(stderr, "Required argument not provided for option -%c\n", value);
+                exit(EXIT_FAILURE);
+            }
             *target = next;
             (*i)++;
         } else if (arg[2] == '=') {
@@ -95,7 +98,10 @@ static bool parse_arg_list(char *arg, char value, char ***target, size_t *count,
     char *change = NULL;
     if (parse_arg_value(arg, value, &change, next, i)) {
         *target = realloc(*target, (*count + 1) * sizeof(char *));
-        assert(*target != NULL);
+        if (*target == NULL) {
+            fprintf(stderr, "Unable to allocate memory\n");
+            exit(EXIT_FAILURE);
+        }
         (*target)[*count] = change;
         (*count)++;
         return true;
