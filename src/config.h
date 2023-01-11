@@ -1,7 +1,6 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#include <stddef.h>
 #include <stdlib.h>
 #include <stdbool.h>
 
@@ -15,10 +14,9 @@ typedef struct {
     char *workdir;
     char *pidfile;
     char *user;
-    char *uid;
-    char *gid;
-    char *groups;
-    char *startscript;
+    char *group;
+    char *currentdir;
+    char *initscript;
     char **envs;
     size_t envs_count;
     char **volumes;

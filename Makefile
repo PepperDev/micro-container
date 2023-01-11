@@ -1,4 +1,4 @@
-TARGET  ?= bin/container
+TARGET  ?= bin/cage
 DESTDIR ?= /usr/local
 
 SOURCES = $(patsubst %,src/%.c, \
