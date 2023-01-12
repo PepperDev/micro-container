@@ -9,10 +9,6 @@ int main(int argc, char *argv[])
           && config_parse(&config, argc, argv))) {
         return EXIT_FAILURE;
     }
-    // /proc/self/exe
-
-    // verify uid/sudo permissions
-
     // if pidfile empty compute it
 
     if (config.stop) {
