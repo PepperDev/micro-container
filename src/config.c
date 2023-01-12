@@ -4,9 +4,9 @@
 
 static bool parse_arg_print(char *, char, void (*)(char *), char *);
 
-static bool parse_arg_value(char *, char, char **, char *, int *);
+static bool parse_arg_value(char *, char, char **, char *, int *, bool *);
 
-static bool parse_arg_list(char *, char, char ***, size_t *, char *, int *);
+static bool parse_arg_list(char *, char, char ***, size_t *, char *, int *, bool *);
 
 static bool parse_arg_flag(char *, char, bool *);
 
@@ -18,6 +18,7 @@ bool config_parse(config_t * config, int argc, char *argv[])
 {
     int i;
     char *carg, *next;
+    bool fatal = false;
 
     memset(config, 0, sizeof(config_t));
     for (i = 1; i < argc; i++) {
@@ -34,20 +35,23 @@ bool config_parse(config_t * config, int argc, char *argv[])
             return false;
         }
         next = argv[i + 1];
-        if (parse_arg_value(carg, 'n', &config->name, next, &i)
-            || parse_arg_value(carg, 'a', &config->appdir, next, &i)
-            || parse_arg_value(carg, 'l', &config->lowerdir, next, &i)
-            || parse_arg_value(carg, 'w', &config->workdir, next, &i)
-            || parse_arg_value(carg, 'p', &config->pidfile, next, &i)
-            || parse_arg_value(carg, 'u', &config->user, next, &i)
-            || parse_arg_value(carg, 'g', &config->group, next, &i)
-            || parse_arg_value(carg, 'c', &config->currentdir, next, &i)
-            || parse_arg_value(carg, 'i', &config->initscript, next, &i)
-            || parse_arg_list(carg, 'e', &config->envs, &config->envs_count, next, &i)
-            || parse_arg_list(carg, 'v', &config->volumes, &config->volumes_count, next, &i)
+        if (parse_arg_value(carg, 'n', &config->name, next, &i, &fatal)
+            || parse_arg_value(carg, 'a', &config->appdir, next, &i, &fatal)
+            || parse_arg_value(carg, 'l', &config->lowerdir, next, &i, &fatal)
+            || parse_arg_value(carg, 'w', &config->workdir, next, &i, &fatal)
+            || parse_arg_value(carg, 'p', &config->pidfile, next, &i, &fatal)
+            || parse_arg_value(carg, 'u', &config->user, next, &i, &fatal)
+            || parse_arg_value(carg, 'g', &config->group, next, &i, &fatal)
+            || parse_arg_value(carg, 'c', &config->currentdir, next, &i, &fatal)
+            || parse_arg_value(carg, 'i', &config->initscript, next, &i, &fatal)
+            || parse_arg_list(carg, 'e', &config->envs, &config->envs_count, next, &i, &fatal)
+            || parse_arg_list(carg, 'v', &config->volumes, &config->volumes_count, next, &i, &fatal)
             || parse_arg_flag(carg, 'k', &config->stop)
             || parse_arg_flag(carg, 'g', &config->gui)
             ) {
+            if (fatal) {
+                return false;
+            }
             continue;
         }
         if (carg[1] == '-' && carg[2] == 0) {
@@ -73,16 +77,17 @@ static bool parse_arg_print(char *arg, char value, void (*print)(char *), char *
     return false;
 }
 
-static bool parse_arg_value(char *arg, char value, char **target, char *next, int *i)
+static bool parse_arg_value(char *arg, char value, char **target, char *next, int *i, bool *fatal)
 {
     if (arg[1] == value) {
         if (arg[2] == 0) {
             if (next == NULL) {
                 fprintf(stderr, "Required argument not provided for option -%c\n", value);
-                exit(EXIT_FAILURE);
+                *fatal = true;
+            } else {
+                *target = next;
+                (*i)++;
             }
-            *target = next;
-            (*i)++;
         } else if (arg[2] == '=') {
             *target = &arg[3];
         } else {
@@ -93,17 +98,21 @@ static bool parse_arg_value(char *arg, char value, char **target, char *next, in
     return false;
 }
 
-static bool parse_arg_list(char *arg, char value, char ***target, size_t *count, char *next, int *i)
+static bool parse_arg_list(char *arg, char value, char ***target, size_t *count, char *next, int *i, bool *fatal)
 {
     char *change = NULL;
-    if (parse_arg_value(arg, value, &change, next, i)) {
+    if (parse_arg_value(arg, value, &change, next, i, fatal)) {
+        if (fatal) {
+            return true;
+        }
         *target = realloc(*target, (*count + 1) * sizeof(char *));
         if (*target == NULL) {
             fprintf(stderr, "Unable to allocate memory\n");
-            exit(EXIT_FAILURE);
+            *fatal = true;
+        } else {
+            (*target)[*count] = change;
+            (*count)++;
         }
-        (*target)[*count] = change;
-        (*count)++;
         return true;
     }
     return false;
