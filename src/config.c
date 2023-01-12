@@ -24,7 +24,7 @@ bool config_parse(config_t * config, int argc, char *argv[])
     for (i = 1; i < argc; i++) {
         carg = argv[i];
         if (carg[0] != '-') {
-            config->command = &argv[i];
+            config->command = argv + i;
             config->command_count = argc - i;
             break;
         }
@@ -57,7 +57,7 @@ bool config_parse(config_t * config, int argc, char *argv[])
         if (carg[1] == '-' && carg[2] == 0) {
             i++;
             if (i < argc) {
-                config->command = &argv[i];
+                config->command = argv + i;
                 config->command_count = argc - i;
             }
             break;
@@ -89,9 +89,9 @@ static bool parse_arg_value(char *arg, char value, char **target, char *next, in
                 (*i)++;
             }
         } else if (arg[2] == '=') {
-            *target = &arg[3];
+            *target = arg + 3;
         } else {
-            *target = &arg[2];
+            *target = arg + 2;
         }
         return true;
     }

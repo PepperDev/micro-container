@@ -1,9 +1,12 @@
 #include "config.h"
+#include "validate.h"
 
 int main(int argc, char *argv[])
 {
     config_t config;
-    if (!config_parse(&config, argc, argv)) {
+
+    if (!(validate_superuser(argc, argv)
+          && config_parse(&config, argc, argv))) {
         return EXIT_FAILURE;
     }
     // /proc/self/exe
