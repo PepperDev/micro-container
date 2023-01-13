@@ -9,7 +9,6 @@ int main(int argc, char *argv[])
           && config_parse(&config, argc, argv))) {
         return EXIT_FAILURE;
     }
-    // if pidfile empty compute it
 
     if (config.stop) {
         // read pidfile if process exists close it

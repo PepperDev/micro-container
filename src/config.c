@@ -65,6 +65,25 @@ bool config_parse(config_t * config, int argc, char *argv[])
         fprintf(stderr, "Unkown argument %s\n", carg);
         return false;
     }
+
+    if (!config->pidfile) {
+        // may use paths.h _PATH_VARRUN instead
+        if (config->name) {
+            size_t size = strlen(config->name);
+            config->pidfile = malloc(size + 25);
+            if (!config->pidfile) {
+                // TODO: remove duplicated message
+                fprintf(stderr, "Unable to allocate memory\n");
+                return false;
+            }
+            memcpy(config->pidfile, "/run/microcontainer/", 20);
+            memcpy(config->pidfile + 20, config->name, size);
+            memcpy(config->pidfile + 20 + size, ".pid", 5);
+        } else {
+            config->pidfile = "/run/microcontainer/pid";
+        }
+    }
+
     return true;
 }
 
