@@ -1,5 +1,6 @@
 #include "config.h"
 #include "validate.h"
+#include "proc.h"
 
 int main(int argc, char *argv[])
 {
@@ -11,7 +12,10 @@ int main(int argc, char *argv[])
     }
 
     if (config.stop) {
-        // read pidfile if process exists close it
+        if (killpid(config.pidfile)) {
+            return EXIT_SUCCESS;
+        }
+        return EXIT_FAILURE;
     }
     // read pidfile if exists try spawning another instance
 

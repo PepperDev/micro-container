@@ -4,6 +4,7 @@ DESTDIR ?= /usr/local
 SOURCES = $(patsubst %,src/%.c, \
 		config \
 		validate \
+		proc \
 		main \
 	)
 
@@ -26,7 +27,8 @@ $(TARGET): $(OBJS) | bin
 
 .objs/config.o: src/config.h
 .objs/validate.o: src/validate.h
-.objs/main.o: src/config.h src/validate.h
+.objs/proc.o: src/proc.h
+.objs/main.o: src/config.h src/validate.h src/proc.h
 
 $(DIRS):
 	-mkdir -p $@
