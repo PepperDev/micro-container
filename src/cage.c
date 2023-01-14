@@ -1,7 +1,10 @@
 #include "cage.h"
-#include <unistd.h>
 #include <stdio.h>
 #include <string.h>
+#define _GNU_SOURCE             // required for unshare and vfork
+#include <unistd.h>
+#include <sched.h>
+#undef _GNU_SOURCE
 
 static bool try_reuse(config_t *);
 
@@ -12,13 +15,27 @@ void spawn_cage(config_t * config)
     if (try_reuse(config) || !fill_defaults(config)) {
         return;
     }
-    // validate config?
-    // if same device try truncate 10G mke2fs and losetup and loop mount
 
-    //unshare(CLONE_NEWNS | CLONE_NEWPID | CLONE_NEWCGROUP) //mounts cgroup
+    // TODO: if lowerdir is parent of upperdir truncate 10G, mke2fs, losetup and loop mount "${upperdir}/../.." if appdir is empty
+
+    // TODO: open pid file and lock it, otherwise fail
+
+    if (unshare(CLONE_NEWNS | CLONE_NEWPID | CLONE_NEWCGROUP)) {
+        fprintf(stderr, "unable to unshare mount and pid!\n");
+        return;
+    }
+
+    printf("my pid: %d %d\n", getpid(), getppid());
+
+    // use clone with CLONE_VM | CLONE_VFORK
+    pid_t pid = vfork();
+    printf("my pid: %d %d -> %d\n", getpid(), getppid(), pid);
+    if (pid != 0) {
+        // write pidfile using this pid
+        exit(EXIT_SUCCESS);
+    }
 
     //should spawns new process for pid work
-    //use vfork or clone with CLONE_VM | CLONE_VFORK and exit old process
     //setsid()/setpgrp() setpgid(0, 0)
 
     //mount_overlay ...recursively?
@@ -112,11 +129,7 @@ static bool fill_defaults(config_t * config)
     if (!config->lowerdir) {
         config->lowerdir = "/";
     }
-    // config->user and config->group leave empty
-    if (!config->currentdir) {
-        config->currentdir = "/";
-    }
-    // warn workdir != upperdir filesystem
-    printf("upperdir: %s\nworkdir: %s\nlowerdir: %s\n", config->upperdir, config->workdir, config->lowerdir);
+    // user, group and currentdir leave empty
+    // TODO: warn if workdir and upperdir are in different filesystem but keep going...
     return true;
 }

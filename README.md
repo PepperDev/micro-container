@@ -69,7 +69,7 @@ If you want an unprivileged Alpine system you can do instead:
     -a appdir
         application base dir default to "/var/lib/microcontainer/default"
     if application name is empty or "/var/lib/microcontainer/app-${name}"
-    if application name is given
+    if application name is given, used only to compute upperdir and workdir
 
     -c currentdir
         directory command will run inside the container, default to "/"
@@ -107,7 +107,7 @@ If you want an unprivileged Alpine system you can do instead:
     -U upperdir
         upper directory default to "${appdir}/upper", must not have
     lowerdir as a the parent directory, otherwise a loop in
-    "/var/lib/microcontainer" will be created if possible
+    "${upperdir}/../.." will be created if possible
 
     -u user
         user name or uid to run command, default to 0, can follow groups
@@ -121,5 +121,5 @@ If you want an unprivileged Alpine system you can do instead:
     the value before is considered in the host and after in the instance
 
     -w workdir
-        overlay workdir default to "${appdir}/work", must be in the same
-    filesystem as upperdir
+        overlay work directory default to "${appdir}/work", must be in the
+    same filesystem as upperdir
