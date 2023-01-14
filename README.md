@@ -43,11 +43,10 @@ If you want an unprivileged Alpine system you can do instead:
         'https://dl-cdn.alpinelinux.org/alpine/v3.17/releases/x86_64/alpine-minirootfs-3.17.1-x86_64.tar.gz' |
         sudo tar -xjf- -C "$tmpdir/root"
       cage \
-        -n root \
         -a "$tmpdir/app" \
         -p "$tmpdir/pid" \
-        -u "$tmpdir/none" \
-        -l "$tmpdir/root" \
+        -l "$tmpdir/none" \
+        -U "$tmpdir/root" \
         -- \
         /bin/sh -s <<\EOF
     apk add --no-cache sudo
@@ -106,10 +105,9 @@ If you want an unprivileged Alpine system you can do instead:
     given
 
     -U upperdir
-        upper directory default to "${appdir}/upper", must be in a
-    different filesystem of lowerdir or lowerdir must not be in the parent
-    hierarchy of upperdir. A loop in "/var/lib/microcontainer" will be
-    created if possible
+        upper directory default to "${appdir}/upper", must not have
+    lowerdir as a the parent directory, otherwise a loop in
+    "/var/lib/microcontainer" will be created if possible
 
     -u user
         user name or uid to run command, default to 0, can follow groups
@@ -120,8 +118,8 @@ If you want an unprivileged Alpine system you can do instead:
 
     -v volume
         map a volume from the host to the instance, if contains a colon
-    the value before it is considered the host and after the instance path
+    the value before is considered in the host and after in the instance
 
     -w workdir
-        overly workdir default to "${appdir}/work", must be in the same
+        overlay workdir default to "${appdir}/work", must be in the same
     filesystem as upperdir
