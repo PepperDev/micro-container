@@ -21,8 +21,8 @@ To run a container based on your own host system:
 
 To run an Alpine based system:
 
-	rootdir=/var/lib/microcontainer/root-alpine
-	if [ ! -d "$rootdir" ]; then
+    rootdir=/var/lib/microcontainer/root-alpine
+    if [ ! -d "$rootdir" ]; then
       sudo mkdir -p "$rootdir"
       wget -qO- \
         'https://dl-cdn.alpinelinux.org/alpine/v3.17/releases/x86_64/alpine-minirootfs-3.17.1-x86_64.tar.gz' |
@@ -35,8 +35,8 @@ To run an Alpine based system:
 
 If you want an unprivileged Alpine system you can do instead:
 
-	rootdir=/var/lib/microcontainer/root-alpine
-	if [ ! -d "$rootdir" ]; then
+    rootdir=/var/lib/microcontainer/root-alpine
+    if [ ! -d "$rootdir" ]; then
       tmp="$(mktemp -d)"
       mkdir "$tmpdir/none" "$tmpdir/root"
       wget -qO- \
@@ -61,16 +61,16 @@ If you want an unprivileged Alpine system you can do instead:
       sudo mv "${rootdir}.tmp" "$rootdir"
       sudo rm -rf "$tmpdir"
     fi
-	# Then simply:
-	cage -l "$rootdir" -u 1000 -g 1000 -n alpine
+    # Then simply:
+    cage -l "$rootdir" -u 1000 -g 1000 -n alpine
 
 ## Usage
     cage [options...] [--] [command...]
 
-	-a appdir
-	    application base dir default to "/var/lib/microcontainer/default"
-	if application name is empty or "/var/lib/microcontainer/app-${name}"
-	if application name is given
+    -a appdir
+        application base dir default to "/var/lib/microcontainer/default"
+    if application name is empty or "/var/lib/microcontainer/app-${name}"
+    if application name is given
 
     -c currentdir
         directory command will run inside the container, default to "/"
@@ -86,19 +86,19 @@ If you want an unprivileged Alpine system you can do instead:
     multiples values separated by colon
 
     -h
-	    print help
+        print help
 
     -i initscript
         script to be run inside the container as root before command
 
-	-k
-	    stop/kill current instance
+    -k
+        stop/kill current instance
 
-	-l
-		lower directory default to "/"
+    -l
+        lower directory default to "/"
 
-	-n name
-	    applicaion name used only to compute appdir and pidfile
+    -n name
+        applicaion name used only to compute appdir and pidfile
 
     -p pidfile
         pid file default to "/run/microcontainer/pid" if application name
@@ -115,8 +115,8 @@ If you want an unprivileged Alpine system you can do instead:
         user name or uid to run command, default to 0, can follow groups
     separated by colon
 
-	-V
-	    print version
+    -V
+        print version
 
     -v volume
         map a volume from the host to the instance, if contains a colon
