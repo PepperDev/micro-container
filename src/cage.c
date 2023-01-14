@@ -6,13 +6,42 @@
 #include <sched.h>
 #undef _GNU_SOURCE
 
+typedef struct {
+    char *root;
+    char *overlay;
+    // other overlays
+    // other volumes
+    char *pending_user;
+    uid_t uid;
+    size_t groups_count;
+    char **pending_groups;
+    size_t gid_count;
+    gid_t *gid;
+    //char *path;
+    //char *term;
+    //char *lang;
+    char *home;
+    char *user;
+    char *shell;
+    // other envs
+} cage_t;
+
 static bool try_reuse(config_t *);
 
 static bool fill_defaults(config_t *);
 
+static bool compute_cage(config_t *, cage_t *);
+
+static bool mount_tmpfs(char *);
+
 void spawn_cage(config_t * config)
 {
     if (try_reuse(config) || !fill_defaults(config)) {
+        return;
+    }
+
+    cage_t cage;
+    if (!compute_cage(config, &cage)) {
         return;
     }
 
@@ -25,18 +54,20 @@ void spawn_cage(config_t * config)
         return;
     }
 
-    printf("my pid: %d %d\n", getpid(), getppid());
-
     // use clone with CLONE_VM | CLONE_VFORK
     pid_t pid = vfork();
-    printf("my pid: %d %d -> %d\n", getpid(), getppid(), pid);
     if (pid != 0) {
         // write pidfile using this pid
         exit(EXIT_SUCCESS);
     }
 
-    //should spawns new process for pid work
-    //setsid()/setpgrp() setpgid(0, 0)
+    // TODO: setsid()/setpgrp() setpgid(0, 0)
+
+    char *root = "/tmp";
+    if (mount_tmpfs(root)) {
+        return;
+    }
+    // TODO: mount tmpfs at /tmp
 
     //mount_overlay ...recursively?
     //mount_bind /dev /dev/pts
@@ -132,4 +163,17 @@ static bool fill_defaults(config_t * config)
     // user, group and currentdir leave empty
     // TODO: warn if workdir and upperdir are in different filesystem but keep going...
     return true;
+}
+
+static bool compute_cage(config_t * config, cage_t * cage)
+{
+    cage->root = "/tmp";
+    //cage->overlay = ...
+    return false;
+}
+
+static bool mount_tmpfs(char *point)
+{
+    // ...
+    return false;
 }
