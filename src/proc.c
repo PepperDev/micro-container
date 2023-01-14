@@ -1,12 +1,13 @@
 #include "proc.h"
 #include <unistd.h>
-#define _POSIX_SOURCE           // required for fileno and kill
+#define _POSIX_SOURCE           // required for fileno, kill and nanosleep
 #include <stdio.h>
-#include <sys/file.h>
 #include <signal.h>
+#include <time.h>
+#undef _POSIX_SOURCE
+#include <sys/file.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <time.h>
 #include <errno.h>
 
 bool killpid(char *pidfile)

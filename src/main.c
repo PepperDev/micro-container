@@ -1,6 +1,7 @@
 #include "config.h"
 #include "validate.h"
 #include "proc.h"
+#include "cage.h"
 
 int main(int argc, char *argv[])
 {
@@ -17,7 +18,8 @@ int main(int argc, char *argv[])
         }
         return EXIT_FAILURE;
     }
-    // read pidfile if exists try spawning another instance
 
-    return EXIT_SUCCESS;
+    spawn_cage(&config);
+
+    return EXIT_FAILURE;
 }
