@@ -55,6 +55,7 @@ If you want an unprivileged Alpine system you can do instead:
     adduser -D -G user -u 1000 -s /bin/ash -h /home/user user
     printf 'user ALL=(ALL:ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/nopass
     EOF
+      sudo mkdir -p "$(dirname "$rootdir")"
       sudo rm -rf "${rootdir}.tmp"
       sudo mv "$tmpdir/root" "${rootdir}.tmp"
       sudo mv "${rootdir}.tmp" "$rootdir"
@@ -72,7 +73,7 @@ If you want an unprivileged Alpine system you can do instead:
 	if application name is given
 
     -c currentdir
-        directory command will run inside the container, default to /
+        directory command will run inside the container, default to "/"
 
     -e env
         add environment variable in the format key=value
@@ -93,6 +94,9 @@ If you want an unprivileged Alpine system you can do instead:
 	-k
 	    stop/kill current instance
 
+	-l
+		lower directory default to "/"
+
 	-n name
 	    applicaion name used only to compute appdir and pidfile
 
@@ -102,7 +106,10 @@ If you want an unprivileged Alpine system you can do instead:
     given
 
     -U upperdir
-        upper directory default to "${appdir}/upper"
+        upper directory default to "${appdir}/upper", must be in a
+    different filesystem of lowerdir or lowerdir must not be in the parent
+    hierarchy of upperdir. A loop in "/var/lib/microcontainer" will be
+    created if possible
 
     -u user
         user name or uid to run command, default to 0, can follow groups
@@ -116,4 +123,5 @@ If you want an unprivileged Alpine system you can do instead:
     the value before it is considered the host and after the instance path
 
     -w workdir
-        overly workdir default to "${appdir}/work"
+        overly workdir default to "${appdir}/work", must be in the same
+    filesystem as upperdir
