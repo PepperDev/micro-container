@@ -6,6 +6,7 @@ SOURCES = $(patsubst %,src/%.c, \
 		validate \
 		proc \
 		cage \
+		root \
 		launch \
 		main \
 	)
@@ -31,6 +32,7 @@ $(TARGET): $(OBJS) | bin
 .objs/validate.o: src/validate.h
 .objs/proc.o: src/proc.h
 .objs/cage.o: src/cage.h src/config.h
+.objs/root.o: src/root.h
 .objs/launch.o: src/launch.h
 .objs/main.o: src/config.h src/validate.h src/proc.h src/cage.h
 

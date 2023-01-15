@@ -1,7 +1,7 @@
 #ifndef LAUNCH_H
 #define LAUNCH_H
 
-#include <unistd.h>
+#include <sys/types.h>
 
 typedef struct {
     char *path;
@@ -17,8 +17,6 @@ typedef struct {
     char **args;
     char **envs;
 } launch_t;
-
-int changeroot(char *);
 
 int launch(launch_t *);
 

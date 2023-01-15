@@ -1,12 +1,11 @@
-#define _GNU_SOURCE             // required for chroot, vfork, setpgrp, setreuid, setregid, setgroups, execvpe
+#include "launch.h"
+#define _GNU_SOURCE             // required for vfork, setpgrp, setreuid, setregid, setgroups, execvpe
 #include <unistd.h>
 #undef _GNU_SOURCE
-#include "launch.h"
 #define _POSIX_SOURCE           // required for setenv
 #include <stdlib.h>
 #undef _POSIX_SOURCE
 #include <stdio.h>
-#include <sys/mount.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 
@@ -22,36 +21,6 @@ typedef struct {
 } exec_t;
 
 static int launch_exec(exec_t *);
-
-int changeroot(char *root)
-{
-    if (chdir(root)) {
-        fprintf(stderr, "Unable to change directory to %s.\n", root);
-        return -1;
-    }
-
-    if (mount("/", NULL, NULL, MS_PRIVATE, NULL)) {
-        fprintf(stderr, "Unable to make parent private.\n");
-        return -1;
-    }
-
-    if (mount(".", "/", NULL, MS_MOVE, NULL)) {
-        fprintf(stderr, "Unable to move root.\n");
-        return -1;
-    }
-
-    if (chroot(".")) {
-        fprintf(stderr, "Unable to change root to %s.\n", root);
-        return -1;
-    }
-
-    if (chdir("/")) {
-        fprintf(stderr, "Unable to change directory to new root.\n");
-        return -1;
-    }
-
-    return 0;
-}
 
 int launch(launch_t * launch)
 {
