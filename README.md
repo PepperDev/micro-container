@@ -106,8 +106,8 @@ If you want an unprivileged Alpine system you can do instead:
 
     -U upperdir
         upper directory default to "${appdir}/upper", must not have
-    lowerdir as a the parent directory, otherwise a loop in
-    "${upperdir}/../.." will be created if possible
+    lowerdir as a the parent directory in the same filesystem, otherwise a
+    loop in "${upperdir}/../.." will be created if possible
 
     -u user
         user name or uid to run command, default to 0, can follow groups
