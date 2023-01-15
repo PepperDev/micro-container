@@ -3,9 +3,10 @@ DESTDIR ?= /usr/local
 
 SOURCES = $(patsubst %,src/%.c, \
 		config \
-		validate \
 		proc \
 		cage \
+		mem \
+		user \
 		mount \
 		root \
 		launch \
@@ -29,17 +30,18 @@ $(TARGET): $(OBJS) | bin
 .objs/%.o: src/%.c | .objs
 	$(CC) $(CFLAGS) -c $< -o $@
 
-.objs/config.o: src/config.h
+.objs/config.o: src/config.h # review
+.objs/proc.o: src/proc.h # review
 
-.objs/validate.o: src/validate.h
-.objs/proc.o: src/proc.h
+.objs/mem.o: src/mem.h # organize
+.objs/user.o: src/user.h # organize
 
 .objs/mount.o: src/mount.h
 .objs/root.o: src/root.h
 .objs/launch.o: src/launch.h
 
-.objs/cage.o: src/cage.h src/config.h
-.objs/main.o: src/config.h src/validate.h src/proc.h src/cage.h
+.objs/cage.o: src/cage.h src/config.h # review
+.objs/main.o: src/config.h src/user.h src/proc.h src/cage.h
 
 $(DIRS):
 	-mkdir -p $@
