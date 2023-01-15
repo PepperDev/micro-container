@@ -63,7 +63,7 @@ bool config_parse(config_t * config, int argc, char *argv[])
             }
             break;
         }
-        fprintf(stderr, "Unkown argument %s\n", carg);
+        fprintf(stderr, "Unkown argument %s.\n", carg);
         return false;
     }
 
@@ -74,7 +74,7 @@ bool config_parse(config_t * config, int argc, char *argv[])
             config->pidfile = malloc(size + 25);
             if (!config->pidfile) {
                 // TODO: remove duplicated message
-                fprintf(stderr, "Unable to allocate memory\n");
+                fprintf(stderr, "Unable to allocate memory.\n");
                 return false;
             }
             memcpy(config->pidfile, "/run/microcontainer/", 20);
@@ -102,7 +102,7 @@ static bool parse_arg_value(char *arg, char value, char **target, char *next, in
     if (arg[1] == value) {
         if (arg[2] == 0) {
             if (next == NULL) {
-                fprintf(stderr, "Required argument not provided for option -%c\n", value);
+                fprintf(stderr, "Required argument not provided for option -%c.\n", value);
                 *fatal = true;
             } else {
                 *target = next;
@@ -127,7 +127,7 @@ static bool parse_arg_list(char *arg, char value, char ***target, size_t *count,
         }
         *target = realloc(*target, (*count + 1) * sizeof(char *));
         if (*target == NULL) {
-            fprintf(stderr, "Unable to allocate memory\n");
+            fprintf(stderr, "Unable to allocate memory.\n");
             *fatal = true;
         } else {
             (*target)[*count] = change;

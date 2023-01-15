@@ -1,7 +1,7 @@
 #include "cage.h"
 #include <stdio.h>
 #include <string.h>
-#define _GNU_SOURCE             // required for unshare and vfork
+#define _GNU_SOURCE             // required for unshare, vfork
 #include <unistd.h>
 #include <sched.h>
 #undef _GNU_SOURCE

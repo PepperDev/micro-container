@@ -1,6 +1,6 @@
 #include "proc.h"
 #include <unistd.h>
-#define _POSIX_SOURCE           // required for fileno, kill and nanosleep
+#define _POSIX_SOURCE           // required for fileno, kill, nanosleep
 #include <stdio.h>
 #include <signal.h>
 #include <time.h>
@@ -22,23 +22,23 @@ bool killpid(char *pidfile)
 
     file = fopen(pidfile, "r");
     if (!file) {
-        fprintf(stderr, "Unable to open pidfile %s\n", pidfile);
+        fprintf(stderr, "Unable to open pidfile %s.\n", pidfile);
         return false;
     }
 
     if (flock(fileno(file), LOCK_EX)) {
-        fprintf(stderr, "Unable to lock pidfile %s\n", pidfile);
+        fprintf(stderr, "Unable to lock pidfile %s.\n", pidfile);
         return false;
     }
 
     if (fscanf(file, "%d", &pid) != 1) {
-        fprintf(stderr, "Unable to read pidfile %s\n", pidfile);
+        fprintf(stderr, "Unable to read pidfile %s.\n", pidfile);
         return false;
     }
 
     if (kill(pid, SIGTERM)) {
         if (errno != ESRCH) {
-            fprintf(stderr, "Unable to send term signal to %d\n", pid);
+            fprintf(stderr, "Unable to send term signal to %d.\n", pid);
             return false;
         }
         dowait = false;
@@ -61,13 +61,13 @@ bool killpid(char *pidfile)
         if (dowait) {
             if (kill(pid, SIGKILL)) {
                 if (errno != ESRCH) {
-                    fprintf(stderr, "Unable to send term signal to %d\n", pid);
+                    fprintf(stderr, "Unable to send term signal to %d.\n", pid);
                     return false;
                 }
                 dowait = false;
             }
             if (dowait && waitpid(pid, NULL, 0) == -1 && errno != ECHILD) {
-                fprintf(stderr, "Unable to wait process %d\n", pid);
+                fprintf(stderr, "Unable to wait process %d.\n", pid);
                 return false;
             }
         }

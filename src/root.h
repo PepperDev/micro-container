@@ -1,5 +1,5 @@
-#ifndef LAUNCH_H
-#define LAUNCH_H
+#ifndef ROOT_H
+#define ROOT_H
 
 #include <sys/types.h>
 
