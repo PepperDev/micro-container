@@ -37,6 +37,9 @@ static bool mount_tmpfs(char *);
 
 int spawn_cage(config_t * config)
 {
+
+    // TODO: create currentdir if do not exists before launch after mount
+
     if (try_reuse(config) || !fill_defaults(config)) {
         return 0;
     }

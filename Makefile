@@ -30,18 +30,18 @@ $(TARGET): $(OBJS) | bin
 .objs/%.o: src/%.c | .objs
 	$(CC) $(CFLAGS) -c $< -o $@
 
-.objs/config.o: src/config.h src/mem.h # review
-.objs/proc.o: src/proc.h # review
-
-.objs/mem.o: src/mem.h # organize
-.objs/user.o: src/user.h # organize
+.objs/user.o: src/user.h
+.objs/mem.o: src/mem.h
+.objs/config.o: src/config.h src/mem.h
+.objs/proc.o: src/proc.h src/mem.h
 
 .objs/mount.o: src/mount.h
 .objs/root.o: src/root.h
 .objs/launch.o: src/launch.h
 
 .objs/cage.o: src/cage.h src/config.h # review
-.objs/main.o: src/config.h src/user.h src/proc.h src/cage.h
+
+.objs/main.o: src/user.h src/config.h src/proc.h src/cage.h
 
 $(DIRS):
 	-mkdir -p $@

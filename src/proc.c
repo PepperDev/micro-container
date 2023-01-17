@@ -1,4 +1,5 @@
 #include "proc.h"
+#include "mem.h"
 #include <unistd.h>
 #define _POSIX_SOURCE           // required for fileno, kill, nanosleep
 #include <stdio.h>
@@ -9,12 +10,20 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <errno.h>
+#include <string.h>
 
 int killpid(char *name, char *pidfile)
 {
     FILE *file;
     pid_t pid;
     bool dowait = true;
+
+    if (!pidfile) {
+        pidfile = compute_pidfile(name, name ? strlen(name) : 0);
+        if (!pidfile) {
+            return -1;
+        }
+    }
 
     if (access(pidfile, F_OK)) {
         return -1;
@@ -80,4 +89,13 @@ int killpid(char *name, char *pidfile)
 
     fclose(file);
     return 0;
+}
+
+char *compute_pidfile(char *name, size_t size)
+{
+    // may use paths.h _PATH_VARRUN instead
+    if (!name) {
+        return "/run/microcontainer/pid";
+    }
+    return mem_append("/run/microcontainer/", 20, name, size, ".pid", 5);
 }

@@ -66,23 +66,6 @@ int config_parse(config_t * config, int argc, char *argv[])
         return -1;
     }
 
-    // TODO: extract
-    if (!config->pidfile) {
-        // may use paths.h _PATH_VARRUN instead
-        if (config->name) {
-            size_t size = strlen(config->name);
-            config->pidfile = mem_allocate(size + 25);
-            if (!config->pidfile) {
-                return -1;
-            }
-            memcpy(config->pidfile, "/run/microcontainer/", 20);
-            memcpy(config->pidfile + 20, config->name, size);
-            memcpy(config->pidfile + 20 + size, ".pid", 5);
-        } else {
-            config->pidfile = "/run/microcontainer/pid";
-        }
-    }
-
     return 0;
 }
 
