@@ -3,6 +3,6 @@
 
 #include <stdbool.h>
 
-bool killpid(char *);
+int killpid(char *, char *);
 
 #endif

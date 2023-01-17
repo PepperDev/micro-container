@@ -1,5 +1,6 @@
 #include "cage.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #define _GNU_SOURCE             // required for unshare, vfork
 #include <unistd.h>
@@ -34,15 +35,15 @@ static bool compute_cage(config_t *, cage_t *);
 
 static bool mount_tmpfs(char *);
 
-void spawn_cage(config_t * config)
+int spawn_cage(config_t * config)
 {
     if (try_reuse(config) || !fill_defaults(config)) {
-        return;
+        return 0;
     }
 
     cage_t cage;
     if (!compute_cage(config, &cage)) {
-        return;
+        return -1;
     }
 
     // TODO: if lowerdir is parent of upperdir truncate 10G, mke2fs, losetup and loop mount "${upperdir}/../.." if appdir is empty
@@ -51,21 +52,21 @@ void spawn_cage(config_t * config)
 
     if (unshare(CLONE_NEWNS | CLONE_NEWPID | CLONE_NEWCGROUP)) {
         fprintf(stderr, "unable to unshare mount and pid!\n");
-        return;
+        return -1;
     }
 
     // use clone with CLONE_VM | CLONE_VFORK
     pid_t pid = vfork();
     if (pid != 0) {
         // write pidfile using this pid
-        exit(EXIT_SUCCESS);
+        return 0;
     }
 
     // TODO: setsid()/setpgrp() setpgid(0, 0)
 
     char *root = "/tmp";
     if (mount_tmpfs(root)) {
-        return;
+        return -1;
     }
     // TODO: mount tmpfs at /tmp
 
@@ -93,6 +94,7 @@ void spawn_cage(config_t * config)
     //chroot(".");
     //chdir config.currentdir
     //execve "/bin/sh", {"-sh",NULL}, env...
+    return 0;
 }
 
 static bool try_reuse(config_t * config)

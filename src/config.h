@@ -1,10 +1,8 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#include <stdlib.h>
 #include <stdbool.h>
-
-#define VERSION "0.3.0-rc"
+#include <sys/types.h>
 
 typedef struct {
     char *name;
@@ -27,6 +25,6 @@ typedef struct {
     bool gui;
 } config_t;
 
-bool config_parse(config_t *, int, char *[]);
+int config_parse(config_t *, int, char *[]);
 
 #endif

@@ -30,7 +30,7 @@ $(TARGET): $(OBJS) | bin
 .objs/%.o: src/%.c | .objs
 	$(CC) $(CFLAGS) -c $< -o $@
 
-.objs/config.o: src/config.h # review
+.objs/config.o: src/config.h src/mem.h # review
 .objs/proc.o: src/proc.h # review
 
 .objs/mem.o: src/mem.h # organize

@@ -2,6 +2,7 @@
 #include "user.h"
 #include "proc.h"
 #include "cage.h"
+#include <stdlib.h>
 
 int main(int argc, char *argv[])
 {
@@ -10,18 +11,19 @@ int main(int argc, char *argv[])
     }
 
     config_t config;
-    if (!config_parse(&config, argc, argv)) {
+    if (config_parse(&config, argc, argv)) {
         return EXIT_FAILURE;
     }
 
     if (config.stop) {
-        if (killpid(config.pidfile)) {
-            return EXIT_SUCCESS;
+        if (killpid(config.name, config.pidfile)) {
+            return EXIT_FAILURE;
         }
-        return EXIT_FAILURE;
+        return EXIT_SUCCESS;
     }
 
-    spawn_cage(&config);
-
-    return EXIT_FAILURE;
+    if (spawn_cage(&config)) {
+        return EXIT_FAILURE;
+    }
+    return EXIT_SUCCESS;
 }

@@ -1,5 +1,5 @@
 #include "launch.h"
-#define _GNU_SOURCE             // required for vfork, setpgrp, setreuid, setregid, setgroups, execvpe
+#define _GNU_SOURCE             // required for vfork, setreuid, setregid, setgroups, execvpe
 #include <unistd.h>
 #undef _GNU_SOURCE
 #define _POSIX_SOURCE           // required for setenv
@@ -72,14 +72,6 @@ int launch(launch_t * launch)
 
 static int launch_exec(exec_t * launch)
 {
-    if (setsid()) {
-        fprintf(stderr, "Unable to change session.\n");
-        return -1;
-    }
-    if (setpgrp()) {
-        fprintf(stderr, "Unable to change process group.\n");
-        return -1;
-    }
     if (setreuid(launch->uid, launch->uid)) {
         fprintf(stderr, "Unable to change user.\n");
         return -1;

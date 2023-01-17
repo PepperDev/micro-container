@@ -3,6 +3,6 @@
 
 #include "config.h"
 
-void spawn_cage(config_t *);
+int spawn_cage(config_t *);
 
 #endif

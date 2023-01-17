@@ -10,36 +10,36 @@
 #include <sys/wait.h>
 #include <errno.h>
 
-bool killpid(char *pidfile)
+int killpid(char *name, char *pidfile)
 {
     FILE *file;
     pid_t pid;
     bool dowait = true;
 
     if (access(pidfile, F_OK)) {
-        return false;
+        return -1;
     }
 
     file = fopen(pidfile, "r");
     if (!file) {
         fprintf(stderr, "Unable to open pidfile %s.\n", pidfile);
-        return false;
+        return -1;
     }
 
     if (flock(fileno(file), LOCK_EX)) {
         fprintf(stderr, "Unable to lock pidfile %s.\n", pidfile);
-        return false;
+        return -1;
     }
 
     if (fscanf(file, "%d", &pid) != 1) {
         fprintf(stderr, "Unable to read pidfile %s.\n", pidfile);
-        return false;
+        return -1;
     }
 
     if (kill(pid, SIGTERM)) {
         if (errno != ESRCH) {
             fprintf(stderr, "Unable to send term signal to %d.\n", pid);
-            return false;
+            return -1;
         }
         dowait = false;
     }
@@ -62,23 +62,22 @@ bool killpid(char *pidfile)
             if (kill(pid, SIGKILL)) {
                 if (errno != ESRCH) {
                     fprintf(stderr, "Unable to send term signal to %d.\n", pid);
-                    return false;
+                    return -1;
                 }
                 dowait = false;
             }
             if (dowait && waitpid(pid, NULL, 0) == -1 && errno != ECHILD) {
                 fprintf(stderr, "Unable to wait process %d.\n", pid);
-                return false;
+                return -1;
             }
         }
     }
 
     if (unlink(pidfile)) {
         fprintf(stderr, "Unable to remove pidfile %s\n", pidfile);
-        return false;
+        return -1;
     }
 
     fclose(file);
-
-    return true;
+    return 0;
 }
