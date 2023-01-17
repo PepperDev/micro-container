@@ -33,11 +33,13 @@ char *mem_append(char *prefix, size_t prefix_size, char *base, size_t base_size,
     char *aux = mem + prefix_size;
     memcpy(aux, base, base_size);
     aux += base_size;
-    memcpy(aux, suffix, suffix_size);
+    if (suffix_size) {
+        memcpy(aux, suffix, suffix_size);
+    }
     return mem;
 }
 
-char *mem_path(char *base, size_t base_size, char *append, size_t append_size)
+char *mem_path(char *base, size_t base_size, char *append, size_t append_size, size_t *computed)
 {
     while (base_size && base[base_size - 1] == '/') {
         base_size--;
@@ -46,7 +48,8 @@ char *mem_path(char *base, size_t base_size, char *append, size_t append_size)
         append++;
         append_size--;
     }
-    char *mem = mem_allocate(base_size + append_size + 2);
+    *computed = base_size + append_size + 1;
+    char *mem = mem_allocate(*computed + 1);
     if (!mem) {
         return NULL;
     }

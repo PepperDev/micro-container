@@ -84,7 +84,7 @@ static int launch_exec(exec_t * launch)
         fprintf(stderr, "Unable to change group list.\n");
         return -1;
     }
-    if (chdir(launch->dir)) {
+    if (launch->dir && chdir(launch->dir)) {
         fprintf(stderr, "Unable to change directory to %s.\n", launch->dir);
         return -1;
     }

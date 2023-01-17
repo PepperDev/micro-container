@@ -1,6 +1,7 @@
 #include "cage.h"
 #include "proc.h"
 #include "mem.h"
+#include "io.h"
 #include "mount.h"
 #include "root.h"
 #include "launch.h"
@@ -8,16 +9,17 @@
 #include <string.h>
 
 static int spawn_existing(config_t *);
+static char *compute_overlay(config_t *, size_t, bool);
 
 int spawn_cage(config_t * config)
 {
     size_t name_size = 0;
-    //bool compute_name_size = true;
+    bool compute_name_size = true;
 
     if (!config->pidfile) {
         if (config->name) {
             name_size = strlen(config->name);
-            //compute_name_size = false;
+            compute_name_size = false;
         }
         config->pidfile = compute_pidfile(config->name, name_size);
         if (!config->pidfile) {
@@ -31,15 +33,26 @@ int spawn_cage(config_t * config)
         }
         return 0;
     }
-    // TODO: create currentdir if do not exists before launch after mount
 
-    /*
-       if (compute_cage(config, &cage)) {
-       return -1;
-       }
-     */
+    int ret = io_isoverlay2supported();
+    if (ret == -1) {
+        return -1;
+    }
+    bool overlay2 = ret == 0;
+    if (compute_name_size && (!config->upperdir || (overlay2 && !config->workdir))) {
+        if (config->name) {
+            name_size = strlen(config->name);
+        }
+    }
+
+    char *opt = compute_overlay(config, name_size, overlay2);
+    if (!opt) {
+        return -1;
+    }
+    // TODO: warn if workdir and upperdir are in different filesystem but keep going...
     // TODO: if lowerdir is parent of upperdir truncate 10G, mke2fs, losetup and loop mount "${upperdir}/../.." if appdir is empty
 
+    // compute_cage
     // TODO: open pid file and lock it, otherwise fail
 
     // compute user, shell, home...
@@ -48,6 +61,8 @@ int spawn_cage(config_t * config)
     // path=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin
 
     // prepare_mounts();
+
+    // TODO: create currentdir if do not exists before launch after mount
 
     // check uid gid groups...
 
@@ -82,54 +97,51 @@ static int spawn_existing(config_t * config)
     return 0;
 }
 
-/*
-static bool fill_defaults(config_t * config)
+static char *compute_overlay(config_t * config, size_t name_size, bool overlay2)
 {
-    if (!config->upperdir || !config->workdir) {
+    size_t lower_size = 0;
+    if (config->lowerdir && *config->lowerdir) {
+        lower_size = strlen(config->lowerdir);
+    } else {
+        config->lowerdir = "/";
+        lower_size = 1;
+    }
+    size_t upper_size = 0, work_size = 0;
+    if (!config->upperdir || (overlay2 && !config->workdir)) {
         size_t appdir_size;
-        if (!config->appdir) {
+        if (config->appdir) {
+            appdir_size = strlen(config->appdir);
+        } else {
             if (config->name) {
-                size_t size = strlen(config->name);
-                appdir_size = 28 + size;
-                config->appdir = malloc(appdir_size + 1);
+                appdir_size = name_size + 28;
+                config->appdir = mem_append("/var/lib/microcontainer/app-", 28, config->name, name_size + 1, NULL, 0);
                 if (!config->appdir) {
-                    // TODO: remove duplicated message
-                    fprintf(stderr, "Unable to allocate memory\n");
-                    return false;
+                    return NULL;
                 }
-                memcpy(config->appdir, "/var/lib/microcontainer/app-", 28);
-                memcpy(config->appdir + 28, config->name, size + 1);
             } else {
                 config->appdir = "/var/lib/microcontainer/default";
                 appdir_size = 31;
             }
+        }
+        if (config->upperdir) {
+            upper_size = strlen(config->upperdir);
         } else {
-            appdir_size = strlen(config->appdir);
-        }
-        if (!config->upperdir) {
-            config->upperdir = malloc(appdir_size + 7);
+            config->upperdir = mem_path(config->appdir, appdir_size, "upper", 5, &upper_size);
             if (!config->upperdir) {
-                fprintf(stderr, "Unable to allocate memory\n");
-                return false;
+                return NULL;
             }
-            memcpy(config->upperdir, config->appdir, appdir_size);
-            memcpy(config->upperdir + appdir_size, "/upper", 7);
         }
-        if (!config->workdir) {
-            config->workdir = malloc(appdir_size + 6);
-            if (!config->workdir) {
-                fprintf(stderr, "Unable to allocate memory\n");
-                return false;
+        if (overlay2) {
+            if (config->workdir) {
+                work_size = strlen(config->workdir);
+            } else {
+                config->workdir = mem_path(config->appdir, appdir_size, "work", 4, &upper_size);
+                if (!config->workdir) {
+                    return NULL;
+                }
             }
-            memcpy(config->workdir, config->appdir, appdir_size);
-            memcpy(config->workdir + appdir_size, "/work", 6);
         }
     }
-    if (!config->lowerdir) {
-        config->lowerdir = "/";
-    }
-    // user, group and currentdir leave empty
-    // TODO: warn if workdir and upperdir are in different filesystem but keep going...
-    return true;
+    // TODO: compose overlay
+    return NULL;
 }
-*/
