@@ -1,125 +1,88 @@
 #include "cage.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#define _GNU_SOURCE             // required for unshare, vfork
+#include "proc.h"
+#include "mem.h"
+#include "mount.h"
+#include "root.h"
+#include "launch.h"
 #include <unistd.h>
-#include <sched.h>
-#undef _GNU_SOURCE
+#include <string.h>
 
-typedef struct {
-    char *root;
-    char *overlay;
-    // other overlays
-    // other volumes
-    char *pending_user;
-    uid_t uid;
-    size_t groups_count;
-    char **pending_groups;
-    size_t gid_count;
-    gid_t *gid;
-    //char *path;
-    //char *term;
-    //char *lang;
-    char *home;
-    char *user;
-    char *shell;
-    // other envs
-} cage_t;
-
-static bool try_reuse(config_t *);
-
-static bool fill_defaults(config_t *);
-
-static bool compute_cage(config_t *, cage_t *);
-
-static bool mount_tmpfs(char *);
+static int spawn_existing(config_t *);
 
 int spawn_cage(config_t * config)
 {
+    size_t name_size = 0;
+    //bool compute_name_size = true;
 
-    // TODO: create currentdir if do not exists before launch after mount
+    if (!config->pidfile) {
+        if (config->name) {
+            name_size = strlen(config->name);
+            //compute_name_size = false;
+        }
+        config->pidfile = compute_pidfile(config->name, name_size);
+        if (!config->pidfile) {
+            return -1;
+        }
+    }
 
-    if (try_reuse(config) || !fill_defaults(config)) {
+    if (!access(config->pidfile, F_OK)) {
+        if (spawn_existing(config)) {
+            return -1;
+        }
         return 0;
     }
+    // TODO: create currentdir if do not exists before launch after mount
 
-    cage_t cage;
-    if (!compute_cage(config, &cage)) {
-        return -1;
-    }
-
+    /*
+       if (compute_cage(config, &cage)) {
+       return -1;
+       }
+     */
     // TODO: if lowerdir is parent of upperdir truncate 10G, mke2fs, losetup and loop mount "${upperdir}/../.." if appdir is empty
 
     // TODO: open pid file and lock it, otherwise fail
-
-    if (unshare(CLONE_NEWNS | CLONE_NEWPID | CLONE_NEWCGROUP)) {
-        fprintf(stderr, "unable to unshare mount and pid!\n");
-        return -1;
-    }
-
-    // use clone with CLONE_VM | CLONE_VFORK
-    pid_t pid = vfork();
-    if (pid != 0) {
-        // write pidfile using this pid
-        return 0;
-    }
-
-    // TODO: setsid()/setpgrp() setpgid(0, 0)
-
-    char *root = "/tmp";
-    if (mount_tmpfs(root)) {
-        return -1;
-    }
-    // TODO: mount tmpfs at /tmp
-
-    //mount_overlay ...recursively?
-    //mount_bind /dev /dev/pts
-    //mount_type /proc /sys /tmp /var/tmp /run
-    //mount_bind (conditionally) /sys/fs/cgroup /sys/firmware/efi/efivars
-    //mkdir /run/lock /run/user
-    //mount_bind /etc/resolv.conf (touch if not exists)
-    //mount_type /run/shm or /dev/shm/
-    //maybe mount /run/user/$id
-    //mount user volumes...
-
-    // check initscript
 
     // compute user, shell, home...
     // reuse term
     // lang=C if not found
     // path=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin
 
+    // prepare_mounts();
+
     // check uid gid groups...
 
-    //chdir(root_dir)
-    //mount --move . /
-    //chroot(".");
-    //chdir config.currentdir
+    if (changeroot("/tmp")) {
+        return -1;
+    }
     //execve "/bin/sh", {"-sh",NULL}, env...
+    //launch();
     return 0;
 }
 
-static bool try_reuse(config_t * config)
+static int spawn_existing(config_t * config)
 {
-    if (access(config->pidfile, F_OK)) {
-        return false;
+    int fd;
+    pid_t pid = readpid(config->pidfile, &fd);
+    if (pid == -1) {
+        return -1;
     }
-    // TODO: export code in proc.c to read pid and lock fd.
-    // should we fail and exit if file exists but fail to read
-    // or should we consider a new instance?
-    // if pid is read but process doesn't exists consider new instance!
-    // overwrite or remove the file.
-
     // compute envs... term, lang, home, shell, user, path...
     // could consider env from previous instance (/proc/:id/environ)
     // to avoid problems when called by different user, but it could
     // change if exec env is called
 
-    // nsenter(setns) target(pid) mount pid/proc cgroup root uid gid groups wd
-    return false;
+    if (changeroot_pid(pid)) {
+        return -1;
+    }
+
+    if (close_pid(fd)) {
+        return -1;
+    }
+    // launch();
+    return 0;
 }
 
+/*
 static bool fill_defaults(config_t * config)
 {
     if (!config->upperdir || !config->workdir) {
@@ -169,16 +132,4 @@ static bool fill_defaults(config_t * config)
     // TODO: warn if workdir and upperdir are in different filesystem but keep going...
     return true;
 }
-
-static bool compute_cage(config_t * config, cage_t * cage)
-{
-    cage->root = "/tmp";
-    //cage->overlay = ...
-    return false;
-}
-
-static bool mount_tmpfs(char *point)
-{
-    // ...
-    return false;
-}
+*/
