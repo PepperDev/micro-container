@@ -5,6 +5,14 @@
 
 static const char MEM_ERROR[] = "Unable to allocate memory.\n";
 
+typedef struct {
+    size_t capacity;
+    size_t length;
+    void *data;
+} buffer_local;
+
+static void buffer_grow(buffer_local *, size_t);
+
 void *mem_allocate(size_t size)
 {
     void *mem = malloc(size);
@@ -61,4 +69,72 @@ char *mem_path(char *base, size_t base_size, char *append, size_t append_size, s
     aux += append_size;
     *aux = 0;
     return mem;
+}
+
+buffer_t buffer_new(size_t capacity)
+{
+    buffer_local *buf = mem_allocate(sizeof(buffer_local));
+    if (!buf) {
+        return NULL;
+    }
+    buf->data = mem_allocate(capacity);
+    if (!buf->data) {
+        return NULL;
+    }
+    buf->capacity = capacity + 64 - capacity % 64;
+    buf->length = 0;
+    return buf;
+}
+
+void buffer_delete(buffer_t buf)
+{
+    free(((buffer_local *) buf)->data);
+    memset(buf, 0, sizeof(buffer_local));
+    free(buf);
+}
+
+size_t buffer_write_data(buffer_t buf, size_t length, const void *data)
+{
+    buffer_local *p = (buffer_local *) buf;
+    buffer_grow(p, length);
+    if (p->data) {
+        memcpy(((char *)p->data) + p->length, data, length);
+    }
+    p->length += length;
+    return length;
+}
+
+size_t buffer_write_byte(buffer_t buf, char byte)
+{
+    buffer_local *p = (buffer_local *) buf;
+    buffer_grow(p, 1);
+    if (p->data) {
+        ((char *)p->data)[p->length++] = byte;
+    }
+    return 1;
+}
+
+void *buffer_use(buffer_t buf)
+{
+    void *data = ((buffer_local *) buf)->data;
+    memset(buf, 0, sizeof(buffer_local));
+    free(buf);
+    return data;
+}
+
+static void buffer_grow(buffer_local * buf, size_t required)
+{
+    if (buf->length + required <= buf->capacity) {
+        return;
+    }
+    buf->capacity = buf->length + required;
+    buf->capacity += 64 - buf->capacity % 64;
+    if (!buf->data) {
+        return;
+    }
+    void *data = mem_reallocate(buf->data, buf->capacity);
+    if (!data) {
+        free(buf->data);
+    }
+    buf->data = data;
 }

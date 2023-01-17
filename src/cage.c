@@ -10,6 +10,7 @@
 
 static int spawn_existing(config_t *);
 static char *compute_overlay(config_t *, size_t, bool);
+static void buffer_append_opt(buffer_t, char *, size_t);
 
 int spawn_cage(config_t * config)
 {
@@ -49,6 +50,9 @@ int spawn_cage(config_t * config)
     if (!opt) {
         return -1;
     }
+
+    printf("opt = %s\n", opt);
+    return 0;
     // TODO: warn if workdir and upperdir are in different filesystem but keep going...
     // TODO: if lowerdir is parent of upperdir truncate 10G, mke2fs, losetup and loop mount "${upperdir}/../.." if appdir is empty
 
@@ -56,7 +60,7 @@ int spawn_cage(config_t * config)
     // TODO: open pid file and lock it, otherwise fail
 
     // compute user, shell, home...
-    // reuse term
+    // reuse term or vt100
     // lang=C if not found
     // path=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin
 
@@ -135,13 +139,47 @@ static char *compute_overlay(config_t * config, size_t name_size, bool overlay2)
             if (config->workdir) {
                 work_size = strlen(config->workdir);
             } else {
-                config->workdir = mem_path(config->appdir, appdir_size, "work", 4, &upper_size);
+                config->workdir = mem_path(config->appdir, appdir_size, "work", 4, &work_size);
                 if (!config->workdir) {
                     return NULL;
                 }
             }
         }
     }
-    // TODO: compose overlay
-    return NULL;
+
+    buffer_t buf = buffer_new(lower_size + upper_size + work_size + 64);
+    if (!buf) {
+        return NULL;
+    }
+    buffer_write_data(buf, 9, "lowerdir=");
+    buffer_append_opt(buf, config->lowerdir, lower_size);
+    buffer_write_data(buf, 10, ",upperdir=");
+    buffer_append_opt(buf, config->upperdir, upper_size);
+    if (overlay2) {
+        buffer_write_data(buf, 9, ",workdir=");
+        buffer_append_opt(buf, config->workdir, work_size);
+    }
+    buffer_write_byte(buf, 0);
+    return buffer_use(buf);
+}
+
+static void buffer_append_opt(buffer_t buf, char *data, size_t size)
+{
+    char *last = data;
+    char *end = data + size;
+
+    while (data < end) {
+        if (*data == '\\' || *data == ',') {
+            if (last < data) {
+                buffer_write_data(buf, data - last, last);
+            }
+            buffer_write_byte(buf, '\\');
+            buffer_write_byte(buf, *data);
+            last = data + 1;
+        }
+        data++;
+    }
+    if (last < end) {
+        buffer_write_data(buf, end - last, last);
+    }
 }
