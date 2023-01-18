@@ -11,7 +11,7 @@ static const char TYPE_TMPFS[] = "tmpfs";
 static int mount_type(const char *, char *, unsigned long, void *);
 static int mount_bind(char *, char *);
 
-int prepare_mounts(mount_t * mounts)
+int prepare_mounts(mount_t * mounts, pid_t * pid)
 {
     if (unshare(CLONE_NEWNS | CLONE_NEWPID | CLONE_NEWCGROUP)) {
         fprintf(stderr, "Unable to unshare mount and pid.\n");
@@ -19,14 +19,12 @@ int prepare_mounts(mount_t * mounts)
     }
 
     // use clone with CLONE_VM | CLONE_VFORK
-    pid_t pid = vfork();
-    if (pid == -1) {
+    *pid = vfork();
+    if (*pid == -1) {
         fprintf(stderr, "Unable to fork process.\n");
         return -1;
     }
-    if (pid != 0) {
-        // write pidfile using this pid and exit
-        mounts->pid = pid;
+    if (*pid != 0) {
         return 0;
     }
 
@@ -70,6 +68,7 @@ int prepare_mounts(mount_t * mounts)
     //mount_type tmpfs /run/shm or /dev/shm/
     //maybe mount /run/user/$id/pulse and wayland-0
     //mount user volumes... mkdir if not exists...
+    // TODO: create parent dir of user mounts if not-exists
     return 0;
 }
 

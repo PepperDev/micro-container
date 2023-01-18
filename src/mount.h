@@ -19,9 +19,8 @@ typedef struct {
     // resolv
     // shm
     // user_volumes...
-    pid_t pid;
 } mount_t;
 
-int prepare_mounts(mount_t *);
+int prepare_mounts(mount_t *, pid_t *);
 
 #endif

@@ -51,15 +51,31 @@ int spawn_cage(config_t * config)
     // TODO: warn if workdir and upperdir are in different filesystem but keep going...
     // TODO: if lowerdir is parent of upperdir truncate 10G, mke2fs, losetup and loop mount "${upperdir}/../.." if appdir is empty
 
+    int fd = create_pidfile(config->pidfile);
+    if (fd == -1) {
+        return -1;
+    }
     // compute_cage
-    // TODO: open pid file and lock it, otherwise fail
 
     // compute user, shell, home...
     // reuse term or vt100
     // lang=C if not found
     // path=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin
 
-    // prepare_mounts();
+    mount_t mounts;
+
+    pid_t pid = 0;
+    if (prepare_mounts(&mounts, &pid)) {
+        return -1;
+    }
+
+    if (pid) {
+        if (writepid(fd, pid)) {
+            return -1;
+        }
+        return 0;
+    }
+    // compute gui mounts
 
     // TODO: create currentdir if do not exists before launch after mount
 
@@ -69,7 +85,11 @@ int spawn_cage(config_t * config)
         return -1;
     }
     //execve "/bin/sh", {"-sh",NULL}, env...
-    //launch();
+
+    launch_t instance;
+    if (launch(&instance)) {
+        return -1;
+    }
     return 0;
 }
 

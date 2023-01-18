@@ -13,6 +13,8 @@
 #include <errno.h>
 #include <string.h>
 
+static int lockfd(int);
+
 int killpid(char *name, char *pidfile)
 {
     if (!pidfile) {
@@ -98,8 +100,7 @@ pid_t readpid(char *pidfile, int *fd)
         return -1;
     }
 
-    if (flock(*fd, LOCK_EX)) {
-        fprintf(stderr, "Unable to lock pidfile %s.\n", pidfile);
+    if (lockfd(*fd)) {
         return -1;
     }
 
@@ -119,6 +120,49 @@ pid_t readpid(char *pidfile, int *fd)
     }
 
     return value;
+}
+
+int create_pidfile(char *pidfile)
+{
+    // create dir if not exists
+    int fd = open(pidfile, O_WRONLY | O_CREAT | O_EXCL);
+    if (fd == -1) {
+        fprintf(stderr, "Unable to create pidfile %s.\n", pidfile);
+        return -1;
+    }
+
+    if (lockfd(fd)) {
+        return -1;
+    }
+
+    return fd;
+}
+
+static int lockfd(int fd)
+{
+    if (flock(fd, LOCK_EX)) {
+        fprintf(stderr, "Unable to lock pidfile.\n");
+        return -1;
+    }
+    return 0;
+}
+
+int writepid(int fd, pid_t pid)
+{
+    char buf[64];
+    int size = snprintf(buf, 64, "%d", pid);
+    if (size == -1) {
+        fprintf(stderr, "Unable to parse pid %d.\n", pid);
+        return -1;
+    }
+    if (write(fd, buf, size) != size) {
+        fprintf(stderr, "Unable to write pid %d into pidfile.\n", pid);
+        return -1;
+    }
+    if (close_pid(fd)) {
+        return -1;
+    }
+    return 0;
 }
 
 int close_pid(int fd)

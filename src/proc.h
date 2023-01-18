@@ -10,6 +10,10 @@ char *compute_pidfile(char *, size_t);
 
 pid_t readpid(char *, int *);
 
+int create_pidfile(char *);
+
+int writepid(int, pid_t);
+
 int close_pid(int);
 
 #endif
