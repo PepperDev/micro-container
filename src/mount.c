@@ -61,10 +61,14 @@ int prepare_mounts(mount_t * mounts, pid_t * pid)
         return -1;
     }
 
+    // TODO: fix if broken due to link? touch file if does not exist?
+    if (mount_bind(mounts->resolv, mounts->root_resolv)) {
+        return -1;
+    }
+
     // TODO: mount_bind (conditionally) /sys/fs/cgroup /sys/firmware/efi/efivars
 
     //mkdir /run/lock /run/user
-    //mount_bind /etc/resolv.conf (touch if not exists)
     //mount_type tmpfs /run/shm or /dev/shm/
     //maybe mount /run/user/$id/pulse and wayland-0
     //mount user volumes... mkdir if not exists...

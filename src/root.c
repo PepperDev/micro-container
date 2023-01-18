@@ -14,7 +14,7 @@ int changeroot(char *root)
 
     if (mount("/", NULL, NULL, MS_PRIVATE, NULL)) {
         fprintf(stderr, "Unable to make parent private.\n");
-        return -1;
+        // return -1;
     }
 
     if (mount(".", "/", NULL, MS_MOVE, NULL)) {

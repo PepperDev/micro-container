@@ -124,7 +124,7 @@ pid_t readpid(char *pidfile, int *fd)
 
 int create_pidfile(char *pidfile)
 {
-    // create dir if not exists
+    // TODO: create dir if not exists
     int fd = open(pidfile, O_WRONLY | O_CREAT | O_EXCL);
     if (fd == -1) {
         fprintf(stderr, "Unable to create pidfile %s.\n", pidfile);

@@ -26,7 +26,7 @@ To run an Alpine based system:
       sudo mkdir -p "$rootdir"
       wget -qO- \
         'https://dl-cdn.alpinelinux.org/alpine/v3.17/releases/x86_64/alpine-minirootfs-3.17.1-x86_64.tar.gz' |
-        sudo tar -xjf- -C "$rootdir"
+        sudo tar -xzf- -C "$rootdir"
     fi
     # Then simply:
     cage -l "$rootdir" -n alpine
@@ -41,7 +41,7 @@ If you want an unprivileged Alpine system you can do instead:
       mkdir "$tmpdir/none" "$tmpdir/root"
       wget -qO- \
         'https://dl-cdn.alpinelinux.org/alpine/v3.17/releases/x86_64/alpine-minirootfs-3.17.1-x86_64.tar.gz' |
-        sudo tar -xjf- -C "$tmpdir/root"
+        sudo tar -xzf- -C "$tmpdir/root"
       cage \
         -a "$tmpdir/app" \
         -p "$tmpdir/pid" \

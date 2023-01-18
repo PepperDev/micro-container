@@ -32,6 +32,7 @@ int spawn_cage(config_t * config)
         }
         return 0;
     }
+    // TODO: validate user defined envs, should contain '=', make key unique, consider last
 
     int ret = io_isoverlay2supported();
     if (ret == -1) {
@@ -44,25 +45,44 @@ int spawn_cage(config_t * config)
         }
     }
 
-    char *opt = compute_overlay(config, name_size, overlay2);
-    if (!opt) {
+    char *opts = compute_overlay(config, name_size, overlay2);
+    if (!opts) {
         return -1;
     }
+    printf("opts = %s\n", opts);
     // TODO: warn if workdir and upperdir are in different filesystem but keep going...
     // TODO: if lowerdir is parent of upperdir truncate 10G, mke2fs, losetup and loop mount "${upperdir}/../.." if appdir is empty
+    // TODO: create upperdir and workdir if not exists
 
     int fd = create_pidfile(config->pidfile);
     if (fd == -1) {
         return -1;
     }
-    // compute_cage
+    // if gui compute host's XDG_RUNTIME_DIR
 
-    // compute user, shell, home...
-    // reuse term or vt100
-    // lang=C if not found
-    // path=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin
+    // check if user defined envs replaces term, lang, path, home, shell and user
+    // reuse host term or vt100
+    // reuser host lang or lang=C if not set
+    // path=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin unless user defined env
 
-    mount_t mounts;
+    mount_t mounts = {
+        .overlay_type = overlay2 ? "overlay" : "overlayfs",
+        .dev = "/dev",
+        .dev_pts = "/dev/pts",
+        .resolv = "/etc/resolv.conf",
+        .root = "/tmp",
+        .overlay_opts = opts,
+        .root_dev = "/tmp/dev",
+        .root_dev_pts = "/tmp/dev/pts",
+        .root_proc = "/tmp/proc",
+        .root_sys = "/tmp/sys",
+        .root_tmp = "/tmp/tmp",
+        .root_var_tmp = "/tmp/var/tmp",
+        .root_run = "/tmp/run",
+        .root_resolv = "/tmp/etc/resolv.conf"
+            // TODO: shm
+            // TODO: user defined mounts
+    };
 
     pid_t pid = 0;
     if (prepare_mounts(&mounts, &pid)) {
@@ -75,18 +95,43 @@ int spawn_cage(config_t * config)
         }
         return 0;
     }
-    // compute gui mounts
+
+    printf("all mounted\n");
+
+    if (changeroot(mounts.root)) {
+        return -1;
+    }
+    printf("chrooted\n");
+    // TODO: check uid gid groups...
+    // TODO: compute user, shell, home, unless user defined before
+    // TODO: if no home found create /tmp/.home
+
+    // TODO: compute gui mounts? - after mounts because guest XDG_RUNTIME_DIR should be based on guest user id
 
     // TODO: create currentdir if do not exists before launch after mount
 
-    // check uid gid groups...
-
-    if (changeroot("/tmp")) {
-        return -1;
-    }
     //execve "/bin/sh", {"-sh",NULL}, env...
 
-    launch_t instance;
+    launch_t instance = {
+        .path = "/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin",
+        .init = NULL,
+        .init_args = NULL,
+        .init_envs = NULL,
+        .uid = 0,
+        .gid = 0,
+        .groups_count = 0,
+        .groups = NULL,
+        .dir = NULL,
+        .command = "/bin/sh",
+        .args = (char *[]) {"-sh", NULL},
+        .envs = (char *[]) {
+                            "PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin",
+                            "TERM=vt100",
+                            "LANG=C",
+                            "HOME=/root",
+                            "USER=root",
+                            NULL}
+    };
     if (launch(&instance)) {
         return -1;
     }
@@ -100,6 +145,8 @@ static int spawn_existing(config_t * config)
     if (pid == -1) {
         return -1;
     }
+    // TODO: if pid is not running unlink pidfile and continue as it were a new instance
+
     // compute envs... term, lang, home, shell, user, path...
     // could consider env from previous instance (/proc/:id/environ)
     // to avoid problems when called by different user, but it could

@@ -7,6 +7,7 @@ typedef struct {
     char *overlay_type;
     char *dev;
     char *dev_pts;
+    char *resolv;
     char *root;
     char *overlay_opts;
     char *root_dev;
@@ -16,7 +17,7 @@ typedef struct {
     char *root_tmp;
     char *root_var_tmp;
     char *root_run;
-    // resolv
+    char *root_resolv;
     // shm
     // user_volumes...
 } mount_t;

@@ -4,8 +4,6 @@
 #include <stdio.h>
 #include <sys/stat.h>
 
-// TODO: if home not found create /tmp/.home
-
 // TODO: obtain caller from real uid or SUDO_USER or parent process
 
 int check_superuser(int argc, char *argv[])
