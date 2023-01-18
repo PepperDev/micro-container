@@ -86,13 +86,6 @@ buffer_t buffer_new(size_t capacity)
     return buf;
 }
 
-void buffer_delete(buffer_t buf)
-{
-    free(((buffer_local *) buf)->data);
-    memset(buf, 0, sizeof(buffer_local));
-    free(buf);
-}
-
 size_t buffer_write_data(buffer_t buf, size_t length, const void *data)
 {
     buffer_local *p = (buffer_local *) buf;
@@ -109,8 +102,9 @@ size_t buffer_write_byte(buffer_t buf, char byte)
     buffer_local *p = (buffer_local *) buf;
     buffer_grow(p, 1);
     if (p->data) {
-        ((char *)p->data)[p->length++] = byte;
+        ((char *)p->data)[p->length] = byte;
     }
+    p->length++;
     return 1;
 }
 
@@ -128,7 +122,7 @@ static void buffer_grow(buffer_local * buf, size_t required)
         return;
     }
     buf->capacity = buf->length + required;
-    buf->capacity += 64 - buf->capacity % 64;
+    buf->capacity += (64 - buf->capacity) % 64;
     if (!buf->data) {
         return;
     }

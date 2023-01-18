@@ -50,9 +50,6 @@ int spawn_cage(config_t * config)
     if (!opt) {
         return -1;
     }
-
-    printf("opt = %s\n", opt);
-    return 0;
     // TODO: warn if workdir and upperdir are in different filesystem but keep going...
     // TODO: if lowerdir is parent of upperdir truncate 10G, mke2fs, losetup and loop mount "${upperdir}/../.." if appdir is empty
 
