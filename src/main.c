@@ -1,26 +1,29 @@
 #include "config.h"
-#include "validate.h"
-#include "mount.h"
-#include "launch.h"
-#include "unload.h"
+#include "user.h"
+#include "proc.h"
+#include "cage.h"
+#include <stdlib.h>
 
 int main(int argc, char *argv[])
 {
-	if (!config_parse(argc, argv))
-	{
-		return 0;
-	}
+    if (check_superuser(argc, argv)) {
+        return EXIT_FAILURE;
+    }
 
-	validate(argv[0]);
+    config_t config;
+    if (config_parse(&config, argc, argv)) {
+        return EXIT_FAILURE;
+    }
 
-	if (!config_unload)
-	{
-		prepare_mounts();
+    if (config.stop) {
+        if (killpid(config.name, config.pidfile)) {
+            return EXIT_FAILURE;
+        }
+        return EXIT_SUCCESS;
+    }
 
-		launch();
-	}
-
-	unload();
-
-	return 0;
+    if (spawn_cage(&config)) {
+        return EXIT_FAILURE;
+    }
+    return EXIT_SUCCESS;
 }

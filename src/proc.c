@@ -1,94 +1,135 @@
+#include "proc.h"
+#include "mem.h"
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
+#define _POSIX_SOURCE           // required for kill, nanosleep
+#include <signal.h>
+#include <time.h>
+#undef _POSIX_SOURCE
+#include <sys/file.h>
+#include <fcntl.h>
+#include <sys/wait.h>
+#include <errno.h>
 #include <string.h>
 
-#include "proc.h"
-#include "io.h"
-
-char proc_get_user(pid_t pid, uid_t *uid, gid_t *gid)
+int killpid(char *name, char *pidfile)
 {
-	size_t size, left, line_len;
-	char file[32], *buf = NULL, *p, *next, found_uid = 0, found_gid = 0;
-	unsigned int val1, val2;
+    if (!pidfile) {
+        pidfile = compute_pidfile(name, name ? strlen(name) : 0);
+        if (!pidfile) {
+            return -1;
+        }
+    }
 
-	snprintf(file, 32, "/proc/%d/status", pid);
-	size = io_readfile(file, &buf);
-	if (size == 0 || buf == NULL)
-	{
-		return 0;
-	}
+    if (access(pidfile, F_OK)) {
+        return 0;
+    }
 
-	left = size;
-	p = buf;
-	while (left > 0 && p != NULL)
-	{
-		next = memchr(p, '\n', left);
-		if (next)
-		{
-			line_len = next - p;
-			*next = 0;
-			next++;
-		}
-		else
-		{
-			line_len = left;
-		}
+    int fd;
+    pid_t pid = readpid(pidfile, &fd);
+    if (pid == -1) {
+        return -1;
+    }
 
-		if (line_len > 4)
-		{
-			if (memcmp(p, "Uid:", 4) == 0)
-			{
-				sscanf(p, "Uid: %u %u %*s", &val1, &val2);
-				if (val1 == 0)
-				{
-					val1 = val2;
-				}
-				*uid = val1;
-				found_uid = 1;
-				if (found_gid)
-				{
-					break;
-				}
-			}
-			else if (memcmp(p, "Gid:", 4) == 0)
-			{
-				sscanf(p, "Gid: %u %u %*s", &val1, &val2);
-				if (val1 == 0)
-				{
-					val1 = val2;
-				}
-				*gid = val1;
-				found_gid = 1;
-				if (found_uid)
-				{
-					break;
-				}
-			}
-		}
+    bool dowait = true;
+    if (kill(pid, SIGTERM)) {
+        if (errno != ESRCH) {
+            fprintf(stderr, "Unable to send term signal to %d.\n", pid);
+            return -1;
+        }
+        dowait = false;
+    }
 
-		p = next;
-		left -= line_len + 1;
-	}
-	free(buf);
-	return found_uid && found_gid;
+    if (dowait) {
+        int count = 50;
+        struct timespec tv = {
+            .tv_sec = 0,
+            .tv_nsec = 100000000
+        };
+        // TODO: if kernel >= 5.3 use pidfd_open
+        for (; count > 0; count--) {
+            if (kill(pid, 0) && errno == ESRCH) {
+                dowait = false;
+                break;
+            }
+            nanosleep(&tv, &tv);
+        }
+        if (dowait) {
+            if (kill(pid, SIGKILL)) {
+                if (errno != ESRCH) {
+                    fprintf(stderr, "Unable to send term signal to %d.\n", pid);
+                    return -1;
+                }
+                dowait = false;
+            }
+            if (dowait && waitpid(pid, NULL, 0) == -1 && errno != ECHILD) {
+                fprintf(stderr, "Unable to wait process %d.\n", pid);
+                return -1;
+            }
+        }
+    }
+
+    if (unlink(pidfile)) {
+        fprintf(stderr, "Unable to remove pidfile %s\n", pidfile);
+        return -1;
+    }
+
+    if (close_pid(fd)) {
+        return -1;
+    }
+    return 0;
 }
 
-pid_t proc_get_parent(pid_t pid)
+char *compute_pidfile(char *name, size_t size)
 {
-	char path[32], *buf = NULL;
-	size_t size;
-	pid_t ppid;
+    // may use paths.h _PATH_VARRUN instead
+    if (!name) {
+        return "/run/microcontainer/pid";
+    }
+    return mem_append("/run/microcontainer/", 20, name, size, ".pid", 5);
+}
 
-	snprintf(path, 32, "/proc/%d/stat", pid);
+pid_t readpid(char *pidfile, int *fd)
+{
+    *fd = open(pidfile, O_RDONLY);
+    if (*fd == -1) {
+        fprintf(stderr, "Unable to open pidfile %s.\n", pidfile);
+        return -1;
+    }
 
-	size = io_readfile(path, &buf);
-	if (size == 0 || buf == NULL)
-	{
-		return 0;
-	}
+    if (flock(*fd, LOCK_EX)) {
+        fprintf(stderr, "Unable to lock pidfile %s.\n", pidfile);
+        return -1;
+    }
 
-	sscanf(buf, "%*d %*s %*c %d %*s", &ppid);
-	free(buf);
-	return ppid;
+    char buf[65];
+    ssize_t size = read(*fd, buf, 64);
+    if (size == -1) {
+        fprintf(stderr, "Unable to read pidfile %s.\n", pidfile);
+        return -1;
+    }
+    buf[size] = 0;
+
+    errno = 0;
+    long value = atol(buf);     // strtol(buf, NULL, 10);
+    if (value == 0 && errno) {
+        fprintf(stderr, "Unable to parse pidfile %s.\n", pidfile);
+        return -1;
+    }
+
+    return value;
+}
+
+int close_pid(int fd)
+{
+    if (flock(fd, LOCK_UN)) {
+        fprintf(stderr, "Unable to unlock pidfile.\n");
+        return -1;
+    }
+    if (close(fd)) {
+        fprintf(stderr, "Unable to close pidfile.\n");
+        return -1;
+    }
+    return 0;
 }

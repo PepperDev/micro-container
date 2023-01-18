@@ -3,49 +3,6 @@ If you are tired of the huge footprint Docker deamon does on your system it is m
 
 **Warning**: this software is considered to be insecure, it can let unprivileged users to run instructions as root and potentially damaging your system, use it at your own risk.
 
-## Examples
-To run a container based on your own host system:
-
-    $ container
-    # or
-    $ container -n name
-
-To run an Alpine based system:
-
-    if [ ! -d /var/lib/micro-container/root-alpine ]; then
-        sudo mkdir -p /var/lib/micro-container/root-alpine
-        wget -qO- \
-            'https://github.com/gliderlabs/docker-alpine/raw/rootfs/library-3.9/x86_64/versions/library-3.9/x86_64/rootfs.tar.xz' |
-            sudo tar -xJv -C /var/lib/micro-container/root-alpine
-    fi
-    # Then simply:
-    container -l /var/lib/micro-container/root-alpine -n alpine
-    # Easy peasy, if you want other name than alpine, just inform the root
-    container -l /var/lib/micro-container/root-alpine -n other-container-name
-
-## Usage
-	container [-] [-d librarydir] [-b basedir] [-l lowerdir] [-n name] [-w workdir] [-u user:group] [[-v hostvolume:guestvolume]...] [-i initscript] [-s shutdownscript] [[--] command args...]
-
-	librarydir - default to "/var/lib/micro-container"
-
-	basedir - default to "$HOME/.app"
-
-	lowerdir - default to "/"
-
-	name - default to blank
-
-	workdir - default to blank
-
-	user:group - default to the current user and group
-
-	hostvolume:guestvolume - default to empty
-
-	initscript - default to blank
-
-	shutdownscript - default to blank
-
-	command - default to blank
-
 ## Download
 Download the avaiable version at [releases](https://github.com/PepperDev/micro-container/releases) page.
 
@@ -55,25 +12,114 @@ Download the avaiable version at [releases](https://github.com/PepperDev/micro-c
 ## Install
 `$ sudo make install`
 
-## Notes
-The only parameter that can be set multiple times is `-v`, all others will take the last value if set more than once.
+## Examples
+To run a container based on your own host system:
 
-If not exists `librarydir` is created with mode `0700` and root as owner.
+    $ cage
+    # or
+    $ cage -n name
 
-If not exists `basedir` is created with default mode and current user as owner.
+To run an Alpine based system:
 
-`librarydir` and `basedir` can be the same, in that case the `basedir` creation take precedence.
+    rootdir=/var/lib/microcontainer/root-alpine
+    if [ ! -d "$rootdir" ]; then
+      sudo mkdir -p "$rootdir"
+      wget -qO- \
+        'https://dl-cdn.alpinelinux.org/alpine/v3.17/releases/x86_64/alpine-minirootfs-3.17.1-x86_64.tar.gz' |
+        sudo tar -xjf- -C "$rootdir"
+    fi
+    # Then simply:
+    cage -l "$rootdir" -n alpine
+    # Easy peasy, if you want other name than alpine, just inform the root
+    cage -l "$rootdir" -n other-container-name
 
-If `name` is blank `rootdir` will be `${librarydir}/app/root` otherwise it is `${librarydir}/app-${name}/root`.
+If you want an unprivileged Alpine system you can do instead:
 
-If `name` is blank `appdir` will be `${basedir}/app` otherwise it is `${basedir}/app-${name}`.
+    rootdir=/var/lib/microcontainer/root-alpine
+    if [ ! -d "$rootdir" ]; then
+      tmp="$(mktemp -d)"
+      mkdir "$tmpdir/none" "$tmpdir/root"
+      wget -qO- \
+        'https://dl-cdn.alpinelinux.org/alpine/v3.17/releases/x86_64/alpine-minirootfs-3.17.1-x86_64.tar.gz' |
+        sudo tar -xjf- -C "$tmpdir/root"
+      cage \
+        -a "$tmpdir/app" \
+        -p "$tmpdir/pid" \
+        -l "$tmpdir/none" \
+        -U "$tmpdir/root" \
+        -- \
+        /bin/sh -s <<\EOF
+    apk add --no-cache sudo
+    addgroup -g 1000 user
+    adduser -D -G user -u 1000 -s /bin/ash -h /home/user user
+    printf 'user ALL=(ALL:ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/nopass
+    EOF
+      sudo mkdir -p "$(dirname "$rootdir")"
+      sudo rm -rf "${rootdir}.tmp"
+      sudo mv "$tmpdir/root" "${rootdir}.tmp"
+      sudo mv "${rootdir}.tmp" "$rootdir"
+      sudo rm -rf "$tmpdir"
+    fi
+    # Then simply:
+    cage -l "$rootdir" -u 1000 -g 1000 -n alpine
 
-The value of `upperdir` will be `${appdir}/upper`.
+## Usage
+    cage [options...] [--] [command...]
 
-The value of `overlayworkdir` will be `${appdir}/work`.
+    -a appdir
+        application base dir default to "/var/lib/microcontainer/default"
+    if application name is empty or "/var/lib/microcontainer/app-${name}"
+    if application name is given, used only to compute upperdir and workdir
 
-`overlayworkdir` is required to be in the same filesystem as `upperdir`
+    -c currentdir
+        directory command will run inside the container, default to "/"
 
-Multiple values can be specified on `lowerdir` separated by colon, the first value will be the root, all next is required to be in the same tree.
+    -e env
+        add environment variable in the format key=value
 
-`initscript` and `shutdownscript` is called from host with an action string with value `init` or `shutdown` as first argument, `rootdir` as second argument and `uid` as third argument and `gid` as forth argument.
+    -G
+        setup environment and volumes to support graphical applications
+
+    -g group
+        group name or uid to run command, default to 0, can contain
+    multiples values separated by colon
+
+    -h
+        print help
+
+    -i initscript
+        script to be run inside the container as root before command
+
+    -k
+        stop/kill current instance
+
+    -l
+        lower directory default to "/"
+
+    -n name
+        applicaion name used only to compute appdir and pidfile
+
+    -p pidfile
+        pid file default to "/run/microcontainer/pid" if application name
+    is empty or "/run/microcontainer/${name}.pid" if application name is
+    given
+
+    -U upperdir
+        upper directory default to "${appdir}/upper", must not have
+    lowerdir as a the parent directory in the same filesystem, otherwise a
+    loop in "${upperdir}/../.." will be created if possible
+
+    -u user
+        user name or uid to run command, default to 0, can follow groups
+    separated by colon
+
+    -V
+        print version
+
+    -v volume
+        map a volume from the host to the instance, if contains a colon
+    the value before is considered in the host and after in the instance
+
+    -w workdir
+        overlay work directory default to "${appdir}/work", must be in the
+    same filesystem as upperdir

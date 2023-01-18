@@ -1,166 +1,47 @@
-#include <unistd.h>
-#include <sys/types.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <pwd.h>
-
 #include "user.h"
-#include "proc.h"
+#include <unistd.h>
+#include <string.h>
+#include <stdio.h>
+#include <sys/stat.h>
 
-#define USER_HOME "HOME"
-#define USER_SUDO_UID "SUDO_UID"
-#define USER_SUDO_GID "SUDO_GID"
+// TODO: if home not found create /tmp/.home
 
-uid_t user_real_uid = 0,
-	user_effective_uid = 0,
-	user_caller_uid = 0;
+// TODO: obtain caller from real uid or SUDO_USER or parent process
 
-gid_t user_real_gid = 0,
-	user_effective_gid = 0,
-	user_caller_gid = 0;
-
-char *user_home = NULL;
-size_t user_home_size = 0;
-
-char user_incomplete_caller = 0;
-
-static void user_collect_caller();
-
-void user_collect()
+int check_superuser(int argc, char *argv[])
 {
-	user_real_uid = getuid();
-	user_effective_uid = geteuid();
-	user_real_gid = getgid();
-	user_effective_gid = getegid();
+    uid_t uid = geteuid();
+    if (uid == 0) {
+        struct stat fst;
+        char *path = "/proc/self/exe";
+        if (stat(path, &fst)) {
+            fprintf(stderr, "Unable to access file %s.\n", path);
+            return -1;
+        }
+        if (fst.st_uid != 0 || fst.st_gid != 0) {
+            if (chown(path, 0, 0)) {
+                fprintf(stderr, "Unable to change owner of file %s.\n", path);
+                return -1;
+            }
+        }
+        if ((fst.st_mode & S_ISUID) != S_ISUID) {
+            if (chmod(path, fst.st_mode | S_ISUID)) {
+                fprintf(stderr, "Unable to change mode of file %s.\n", path);
+                return -1;
+            }
+        }
+        return 0;
+    }
 
-	if (
-		(
-			(
-				user_real_uid != 0 || user_effective_uid != 0
-			) && setreuid(0, 0) != 0
-		) || (
-			(
-				user_real_gid != 0 || user_effective_gid != 0
-			) && setregid(0, 0) != 0
-		)
-	)
-	{
-		fprintf(
-			stderr,
-			"Warning: it was not able to escalate privileges to root!\n"
-		);
-	}
+    {
+        char *newargs[argc + 4];
+        newargs[0] = "sudo";
+        newargs[1] = "--preserve-env";
+        newargs[2] = "--";
+        memcpy(newargs + 3, argv, (argc + 1) * sizeof(char *));
+        execvp(newargs[0], newargs);
+    }
 
-	user_collect_caller();
-}
-
-static void user_collect_caller()
-{
-	if (user_effective_uid != user_real_uid && user_real_uid != 0)
-	{
-		user_caller_uid = user_real_uid;
-		user_caller_gid = user_real_gid;
-		return;
-	}
-
-	char *uid, *gid;
-	uid = getenv(USER_SUDO_UID);
-	if (uid != NULL && *uid != 0)
-	{
-		gid = getenv(USER_SUDO_GID);
-		if (gid != NULL && *gid != 0)
-		{
-			user_caller_uid = strtoul(uid, NULL, 10);
-			user_caller_gid = strtoul(gid, NULL, 10);
-			if (user_caller_uid != 0)
-			{
-				return;
-			}
-		}
-	}
-
-	user_incomplete_caller = 1;
-}
-
-void user_require_home()
-{
-	if (user_home != NULL)
-	{
-		return;
-	}
-
-	char *home = getenv(USER_HOME);
-	if (home != NULL && *home != 0)
-	{
-		user_home = strdup(home);
-		user_home_size = strlen(user_home);
-		return;
-	}
-
-	user_require_caller();
-
-	struct passwd *pwd = getpwuid(user_caller_uid);
-	if (pwd != NULL && pwd->pw_dir != NULL && *pwd->pw_dir != 0)
-	{
-		user_home = strdup(pwd->pw_dir);
-		user_home_size = strlen(user_home);
-		fprintf(
-			stderr,
-			"Warning: home not set, assuming caller home \"%s\"!\n",
-			user_home
-		);
-		return;
-	}
-
-	fprintf(
-		stderr,
-		"Fatal: unable to get caller home!\n"
-	);
-	exit(1);
-}
-
-void user_require_caller()
-{
-	if (!user_incomplete_caller)
-	{
-		return;
-	}
-
-	pid_t pid = getppid();
-	while (pid > 1)
-	{
-		uid_t uid;
-		gid_t gid;
-		if (proc_get_user(pid, &uid, &gid))
-		{
-			if (uid != user_effective_uid && uid != 0)
-			{
-				user_caller_uid = uid;
-				user_caller_gid = gid;
-				user_incomplete_caller = 0;
-				return;
-			}
-		}
-		pid = proc_get_parent(pid);
-	}
-
-	if (user_real_uid != 0)
-	{
-		user_caller_uid = user_real_gid;
-		user_caller_gid = user_real_gid;
-	}
-	else
-	{
-		user_caller_uid = user_effective_uid;
-		user_caller_gid = user_effective_gid;
-	}
-
-	fprintf(
-		stderr,
-		"Warning: unable to get caller uid, assuming %d!\n",
-		user_caller_uid
-	);
-
-	user_incomplete_caller = 0;
+    fprintf(stderr, "Unable to escalate privileges.\n");
+    return -1;
 }

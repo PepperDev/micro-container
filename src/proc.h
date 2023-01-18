@@ -1,10 +1,15 @@
 #ifndef PROC_H
 #define PROC_H
 
-#include <unistd.h>
+#include <stdbool.h>
+#include <sys/types.h>
 
-char proc_get_user(pid_t, uid_t*, gid_t*);
+int killpid(char *, char *);
 
-pid_t proc_get_parent(pid_t);
+char *compute_pidfile(char *, size_t);
+
+pid_t readpid(char *, int *);
+
+int close_pid(int);
 
 #endif
