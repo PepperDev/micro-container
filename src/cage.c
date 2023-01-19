@@ -49,7 +49,6 @@ int spawn_cage(config_t * config)
     if (!opts) {
         return -1;
     }
-    printf("opts = %s\n", opts);
     // TODO: warn if workdir and upperdir are in different filesystem but keep going...
     // TODO: if lowerdir is parent of upperdir truncate 10G, mke2fs, losetup and loop mount "${upperdir}/../.." if appdir is empty
     // TODO: create upperdir and workdir if not exists
@@ -96,12 +95,9 @@ int spawn_cage(config_t * config)
         return 0;
     }
 
-    printf("all mounted\n");
-
     if (changeroot(mounts.root)) {
         return -1;
     }
-    printf("chrooted\n");
     // TODO: check uid gid groups...
     // TODO: compute user, shell, home, unless user defined before
     // TODO: if no home found create /tmp/.home
