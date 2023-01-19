@@ -18,4 +18,6 @@ int close_pid(int);
 
 int pidwait(pid_t);
 
+int pidexists(pid_t);
+
 #endif

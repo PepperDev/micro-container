@@ -1,5 +1,6 @@
 #include "proc.h"
 #include "mem.h"
+#include "io.h"
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -24,7 +25,11 @@ int killpid(char *name, char *pidfile)
         }
     }
 
-    if (access(pidfile, F_OK)) {
+    int ret = io_exists(pidfile);
+    if (ret == -1) {
+        return -1;
+    }
+    if (ret) {
         return 0;
     }
 
@@ -51,7 +56,11 @@ int killpid(char *name, char *pidfile)
         };
         // TODO: if kernel >= 5.3 use pidfd_open
         for (; count > 0; count--) {
-            if (kill(pid, 0) && errno == ESRCH) {
+            int ret = pidexists(pid);
+            if (ret == -1) {
+                return -1;
+            }
+            if (ret) {
                 dowait = false;
                 break;
             }
@@ -72,8 +81,7 @@ int killpid(char *name, char *pidfile)
         }
     }
 
-    if (unlink(pidfile)) {
-        fprintf(stderr, "Unable to remove pidfile %s\n", pidfile);
+    if (io_unlink(pidfile)) {
         return -1;
     }
 
@@ -188,4 +196,16 @@ int pidwait(pid_t pid)
     // WTERMSIG(status) || WEXITSTATUS(status)
     // WIFSIGNALED(status) ? WTERMSIG(status) : WEXITSTATUS(status)
     return status;
+}
+
+int pidexists(pid_t pid)
+{
+    if (kill(pid, 0)) {
+        if (errno == ESRCH) {
+            return 1;
+        }
+        fprintf(stderr, "Unable to check process %d existence.\n", pid);
+        return -1;
+    }
+    return 0;
 }

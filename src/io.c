@@ -1,6 +1,8 @@
 #include "io.h"
 #include <sys/utsname.h>
 #include <stdio.h>
+#include <unistd.h>
+#include <errno.h>
 
 int io_isoverlay2supported()
 {
@@ -18,4 +20,26 @@ int io_isoverlay2supported()
         return 0;
     }
     return 1;
+}
+
+int io_exists(char *file)
+{
+    int ret = access(file, F_OK);
+    if (ret) {
+        if (errno == ENOENT) {
+            return 1;
+        }
+        fprintf(stderr, "Unable check file %s existence.\n", file);
+        return -1;
+    }
+    return 0;
+}
+
+int io_unlink(char *file)
+{
+    if (unlink(file)) {
+        fprintf(stderr, "Unable to remove file %s\n", file);
+        return -1;
+    }
+    return 0;
 }

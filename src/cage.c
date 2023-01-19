@@ -26,15 +26,22 @@ int spawn_cage(config_t * config)
         }
     }
 
-    if (!access(config->pidfile, F_OK)) {
-        if (spawn_existing(config)) {
+    int ret = io_exists(config->pidfile);
+    if (ret == -1) {
+        return -1;
+    }
+    if (!ret) {
+        ret = spawn_existing(config);
+        if (ret == -1) {
             return -1;
         }
-        return 0;
+        if (!ret) {
+            return 0;
+        }
     }
     // TODO: validate user defined envs, should contain '=', make key unique, consider last
 
-    int ret = io_isoverlay2supported();
+    ret = io_isoverlay2supported();
     if (ret == -1) {
         return -1;
     }
@@ -141,8 +148,19 @@ static int spawn_existing(config_t * config)
     if (pid == -1) {
         return -1;
     }
-    // TODO: if pid is not running unlink pidfile and continue as it were a new instance
-
+    int ret = pidexists(pid);
+    if (ret == -1) {
+        return -1;
+    }
+    if (ret) {
+        if (io_unlink(config->pidfile)) {
+            return -1;
+        }
+        if (close_pid(fd)) {
+            return -1;
+        }
+        return 1;
+    }
     // compute envs... term, lang, home, shell, user, path...
     // could consider env from previous instance (/proc/:id/environ)
     // to avoid problems when called by different user, but it could
