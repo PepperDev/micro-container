@@ -16,4 +16,6 @@ int writepid(int, pid_t);
 
 int close_pid(int);
 
+int pidwait(pid_t);
+
 #endif

@@ -177,3 +177,15 @@ int close_pid(int fd)
     }
     return 0;
 }
+
+int pidwait(pid_t pid)
+{
+    int status = 0;
+    if (waitpid(pid, &status, 0) == -1) {
+        fprintf(stderr, "Unable to wait process %d.\n", pid);
+        return -1;
+    }
+    // WTERMSIG(status) || WEXITSTATUS(status)
+    // WIFSIGNALED(status) ? WTERMSIG(status) : WEXITSTATUS(status)
+    return status;
+}

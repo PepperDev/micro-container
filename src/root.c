@@ -50,6 +50,7 @@ int changeroot_pid(pid_t pid)
     if (nsenter(pid, "cgroup", CLONE_NEWCGROUP)) {
         return -1;
     }
+    // TODO: may need to fork to obtain new pid in the new ns
     return -1;
 }
 

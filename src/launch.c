@@ -1,4 +1,5 @@
 #include "launch.h"
+#include "proc.h"
 #define _GNU_SOURCE             // required for vfork, setreuid, setregid, setgroups, execvpe
 #include <unistd.h>
 #undef _GNU_SOURCE
@@ -47,12 +48,7 @@ int launch(launch_t * launch)
             };
             return launch_exec(&value);
         }
-        int status = 0;
-        if (waitpid(pid, &status, 0) == -1) {
-            fprintf(stderr, "Unable to wait init process.\n");
-            return -1;
-        }
-        if (status) {
+        if (pidwait(pid)) {
             fprintf(stderr, "Init process failed.\n");
             return -1;
         }

@@ -92,7 +92,7 @@ int spawn_cage(config_t * config)
         if (writepid(fd, pid)) {
             return -1;
         }
-        return 0;
+        return pidwait(pid);
     }
 
     if (changeroot(mounts.root)) {
