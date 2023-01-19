@@ -9,4 +9,6 @@ int io_exists(char *);
 
 int io_unlink(char *);
 
+int io_mkdir(char *, size_t);
+
 #endif

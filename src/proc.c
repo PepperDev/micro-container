@@ -19,7 +19,7 @@ static int lockfd(int);
 int killpid(char *name, char *pidfile)
 {
     if (!pidfile) {
-        pidfile = compute_pidfile(name, name ? strlen(name) : 0);
+        pidfile = compute_pidfile(name, name ? strlen(name) : 0, NULL);
         if (!pidfile) {
             return -1;
         }
@@ -74,6 +74,7 @@ int killpid(char *name, char *pidfile)
                 }
                 dowait = false;
             }
+            // pidwait without errors
             if (dowait && waitpid(pid, NULL, 0) == -1 && errno != ECHILD) {
                 fprintf(stderr, "Unable to wait process %d.\n", pid);
                 return -1;
@@ -91,11 +92,17 @@ int killpid(char *name, char *pidfile)
     return 0;
 }
 
-char *compute_pidfile(char *name, size_t size)
+char *compute_pidfile(char *name, size_t size, size_t *len)
 {
     // may use paths.h _PATH_VARRUN instead
     if (!name) {
+        if (len) {
+            *len = 23;
+        }
         return "/run/microcontainer/pid";
+    }
+    if (len) {
+        *len = 25 + size;
     }
     return mem_append("/run/microcontainer/", 20, name, size, ".pid", 5);
 }
@@ -130,9 +137,22 @@ pid_t readpid(char *pidfile, int *fd)
     return value;
 }
 
-int create_pidfile(char *pidfile)
+int create_pidfile(char *pidfile, size_t size)
 {
-    // TODO: create dir if not exists
+    size_t i = size - 1;
+    while (i && pidfile[i] != '/') {
+        i--;
+    }
+    while (i && pidfile[i] == '/') {
+        i--;
+    }
+    if (i) {
+        pidfile[i + 1] = 0;
+        if (io_mkdir(pidfile, i)) {
+            return -1;
+        }
+        pidfile[i + 1] = '/';
+    }
     int fd = open(pidfile, O_WRONLY | O_CREAT | O_EXCL);
     if (fd == -1) {
         fprintf(stderr, "Unable to create pidfile %s.\n", pidfile);

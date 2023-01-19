@@ -6,11 +6,11 @@
 
 int killpid(char *, char *);
 
-char *compute_pidfile(char *, size_t);
+char *compute_pidfile(char *, size_t, size_t *);
 
 pid_t readpid(char *, int *);
 
-int create_pidfile(char *);
+int create_pidfile(char *, size_t);
 
 int writepid(int, pid_t);
 

@@ -12,15 +12,17 @@ static int spawn_existing(config_t *);
 
 int spawn_cage(config_t * config)
 {
-    size_t name_size = 0;
+    size_t name_size = 0, pidfile_size;
     bool compute_name_size = true;
 
-    if (!config->pidfile) {
+    if (config->pidfile) {
+        pidfile_size = strlen(config->pidfile);
+    } else {
         if (config->name) {
             name_size = strlen(config->name);
             compute_name_size = false;
         }
-        config->pidfile = compute_pidfile(config->name, name_size);
+        config->pidfile = compute_pidfile(config->name, name_size, &pidfile_size);
         if (!config->pidfile) {
             return -1;
         }
@@ -57,10 +59,11 @@ int spawn_cage(config_t * config)
         return -1;
     }
     // TODO: warn if workdir and upperdir are in different filesystem but keep going...
-    // TODO: if lowerdir is parent of upperdir truncate 10G, mke2fs, losetup and loop mount "${upperdir}/../.." if appdir is empty
-    // TODO: create upperdir and workdir if not exists
 
-    int fd = create_pidfile(config->pidfile);
+    // ! TODO: if lowerdir is parent of upperdir truncate 10G, mke2fs, losetup and loop mount "${upperdir}/../.." if appdir is empty
+    // ! TODO: create upperdir and workdir if not exists
+
+    int fd = create_pidfile(config->pidfile, pidfile_size);
     if (fd == -1) {
         return -1;
     }

@@ -1,5 +1,6 @@
 #include "io.h"
 #include <sys/utsname.h>
+#include <sys/stat.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <errno.h>
@@ -39,6 +40,45 @@ int io_unlink(char *file)
 {
     if (unlink(file)) {
         fprintf(stderr, "Unable to remove file %s\n", file);
+        return -1;
+    }
+    return 0;
+}
+
+int io_mkdir(char *dir, size_t size)
+{
+    int ret = io_exists(dir);
+    if (ret == -1) {
+        return -1;
+    }
+    if (!ret) {
+        struct stat fst;
+        if (stat(dir, &fst)) {
+            fprintf(stderr, "Unable to get stat of file %s\n", dir);
+            return -1;
+        }
+        if (!S_ISDIR(fst.st_mode)) {
+            fprintf(stderr, "File %s is supposed to be a directory\n", dir);
+            return -1;
+        }
+        return 0;
+    }
+    size_t i = size - 1;
+    while (i && dir[i] != '/') {
+        i--;
+    }
+    while (i && dir[i] == '/') {
+        i--;
+    }
+    if (i) {
+        dir[i + 1] = 0;
+        if (io_mkdir(dir, i)) {
+            return -1;
+        }
+        dir[i + 1] = '/';
+    }
+    if (mkdir(dir, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH)) {
+        fprintf(stderr, "Unable to create directory %s\n", dir);
         return -1;
     }
     return 0;
