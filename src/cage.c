@@ -54,14 +54,23 @@ int spawn_cage(config_t * config)
         }
     }
 
-    char *opts = compute_overlay(config, name_size, overlay2);
+    size_t upper_size, work_size;
+    char *opts = compute_overlay(config, name_size, overlay2, &upper_size, &work_size);
     if (!opts) {
         return -1;
     }
+    // TODO: abort if lowerdir doesn't exist
+
     // TODO: warn if workdir and upperdir are in different filesystem but keep going...
 
-    // ! TODO: if lowerdir is parent of upperdir truncate 10G, mke2fs, losetup and loop mount "${upperdir}/../.." if appdir is empty
-    // ! TODO: create upperdir and workdir if not exists
+    // TODO: if lowerdir is parent of upperdir truncate 10G, mke2fs, losetup and loop mount "${upperdir}/../.." if appdir is empty
+
+    if (io_mkdir(config->upperdir, upper_size)) {
+        return -1;
+    }
+    if (overlay2 && io_mkdir(config->workdir, work_size)) {
+        return -1;
+    }
 
     int fd = create_pidfile(config->pidfile, pidfile_size);
     if (fd == -1) {

@@ -3,6 +3,6 @@
 
 #include "config.h"
 
-char *compute_overlay(config_t *, size_t, bool);
+char *compute_overlay(config_t *, size_t, bool, size_t *, size_t *);
 
 #endif
