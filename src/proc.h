@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <sys/types.h>
 
+pid_t pidfork();
+
 int killpid(char *, char *);
 
 char *compute_pidfile(char *, size_t, size_t *);

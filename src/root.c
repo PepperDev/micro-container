@@ -1,4 +1,5 @@
 #include "root.h"
+#include "proc.h"
 #define _GNU_SOURCE             // required for chroot, vfork, setns
 #include <unistd.h>
 #include <sched.h>
@@ -18,7 +19,7 @@ int changeroot(char *root)
 
     if (mount("/", NULL, NULL, MS_PRIVATE, NULL)) {
         fprintf(stderr, "Unable to make parent private.\n");
-        return -1;
+        // return -1;
     }
 
     if (mount(".", "/", NULL, MS_MOVE, NULL)) {
@@ -50,8 +51,17 @@ int changeroot_pid(pid_t pid)
     if (nsenter(pid, "cgroup", CLONE_NEWCGROUP)) {
         return -1;
     }
-    // TODO: may need to fork to obtain new pid in the new ns
-    return -1;
+    pid_t newpid = pidfork();
+    if (newpid == -1) {
+        return -1;
+    }
+    if (newpid) {
+        if (pidwait(newpid)) {
+            return -1;
+        }
+        return 1;
+    }
+    return 0;
 }
 
 static int nsenter(pid_t pid, char *ns, int type)

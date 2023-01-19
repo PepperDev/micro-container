@@ -1,7 +1,9 @@
 #include "proc.h"
 #include "mem.h"
 #include "io.h"
+#define _GNU_SOURCE             // required for vfork
 #include <unistd.h>
+#undef _GNU_SOURCE
 #include <stdlib.h>
 #include <stdio.h>
 #define _POSIX_SOURCE           // required for kill, nanosleep
@@ -15,6 +17,16 @@
 #include <string.h>
 
 static int lockfd(int);
+
+pid_t pidfork()
+{
+    // use clone with CLONE_VM | CLONE_VFORK
+    pid_t pid = vfork();
+    if (pid == -1) {
+        fprintf(stderr, "Unable to fork process.\n");
+    }
+    return pid;
+}
 
 int killpid(char *name, char *pidfile)
 {
@@ -99,10 +111,15 @@ char *compute_pidfile(char *name, size_t size, size_t *len)
         if (len) {
             *len = 23;
         }
-        return "/run/microcontainer/pid";
+        char *dup = mem_allocate(24);
+        if (!dup) {
+            return NULL;
+        }
+        memcpy(dup, "/run/microcontainer/pid", 24);
+        return dup;
     }
     if (len) {
-        *len = 25 + size;
+        *len = 24 + size;
     }
     return mem_append("/run/microcontainer/", 20, name, size, ".pid", 5);
 }

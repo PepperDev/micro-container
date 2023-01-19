@@ -1,6 +1,7 @@
 #include "mount.h"
-#define _GNU_SOURCE             // required for vfork, unshare
-#include <unistd.h>
+#include "proc.h"
+//#include <unistd.h>
+#define _GNU_SOURCE             // required for unshare
 #include <sched.h>
 #undef _GNU_SOURCE
 #include <sys/mount.h>
@@ -18,13 +19,11 @@ int prepare_mounts(mount_t * mounts, pid_t * pid)
         return -1;
     }
 
-    // use clone with CLONE_VM | CLONE_VFORK
-    *pid = vfork();
+    *pid = pidfork();
     if (*pid == -1) {
-        fprintf(stderr, "Unable to fork process.\n");
         return -1;
     }
-    if (*pid != 0) {
+    if (*pid) {
         return 0;
     }
 

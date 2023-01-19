@@ -9,7 +9,9 @@
 #include <string.h>
 
 static int spawn_existing(config_t *);
+static int launch_cage();
 
+// compute_cage
 int spawn_cage(config_t * config)
 {
     size_t name_size = 0, pidfile_size;
@@ -127,30 +129,7 @@ int spawn_cage(config_t * config)
 
     //execve "/bin/sh", {"-sh",NULL}, env...
 
-    launch_t instance = {
-        .path = "/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin",
-        .init = NULL,
-        .init_args = NULL,
-        .init_envs = NULL,
-        .uid = 0,
-        .gid = 0,
-        .groups_count = 0,
-        .groups = NULL,
-        .dir = NULL,
-        .command = "/bin/sh",
-        .args = (char *[]) {"-sh", NULL},
-        .envs = (char *[]) {
-                            "PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin",
-                            "TERM=vt100",
-                            "LANG=C",
-                            "HOME=/root",
-                            "USER=root",
-                            NULL}
-    };
-    if (launch(&instance)) {
-        return -1;
-    }
-    return 0;
+    return launch_cage();
 }
 
 static int spawn_existing(config_t * config)
@@ -178,13 +157,45 @@ static int spawn_existing(config_t * config)
     // to avoid problems when called by different user, but it could
     // change if exec env is called
 
-    if (changeroot_pid(pid)) {
+    ret = changeroot_pid(pid);
+    if (ret == -1) {
         return -1;
+    }
+    if (ret) {
+        return 0;
     }
 
     if (close_pid(fd)) {
         return -1;
     }
-    // launch();
+
+    return launch_cage();
+}
+
+static int launch_cage()
+{
+    launch_t instance = {
+        .path = "/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin",
+        .init = NULL,
+        .init_args = NULL,
+        .init_envs = NULL,
+        .uid = 0,
+        .gid = 0,
+        .groups_count = 0,
+        .groups = NULL,
+        .dir = NULL,
+        .command = "/bin/sh",
+        .args = (char *[]) {"-sh", NULL},
+        .envs = (char *[]) {
+                            "PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin",
+                            "TERM=vt100",
+                            "LANG=C",
+                            "HOME=/root",
+                            "USER=root",
+                            NULL}
+    };
+    if (launch(&instance)) {
+        return -1;
+    }
     return 0;
 }
