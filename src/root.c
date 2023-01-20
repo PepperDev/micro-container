@@ -42,13 +42,13 @@ int changeroot(char *root)
 
 int changeroot_pid(pid_t pid)
 {
-    if (nsenter(pid, "mnt", CLONE_NEWNS)) {
-        return -1;
-    }
     if (nsenter(pid, "pid", CLONE_NEWPID)) {
         return -1;
     }
     if (nsenter(pid, "cgroup", CLONE_NEWCGROUP)) {
+        return -1;
+    }
+    if (nsenter(pid, "mnt", CLONE_NEWNS)) {
         return -1;
     }
     pid_t newpid = pidfork();
