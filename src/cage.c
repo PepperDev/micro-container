@@ -114,6 +114,8 @@ int spawn_cage(config_t * config)
             return -1;
         }
         return pidwait(pid);
+    } else if (close_pid(fd)) {
+        return -1;
     }
 
     if (changeroot(mounts.root)) {
@@ -168,6 +170,8 @@ static int spawn_existing(config_t * config)
     if (close_pid(fd)) {
         return -1;
     }
+
+    config->initscript = NULL;
 
     return launch_cage();
 }

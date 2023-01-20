@@ -20,8 +20,8 @@ static int lockfd(int);
 
 pid_t pidfork()
 {
-    // use clone with CLONE_VM | CLONE_VFORK
-    pid_t pid = vfork();
+    // use vfork or clone with CLONE_VM | CLONE_VFORK
+    pid_t pid = fork();
     if (pid == -1) {
         fprintf(stderr, "Unable to fork process.\n");
     }
@@ -170,7 +170,7 @@ int create_pidfile(char *pidfile, size_t size)
         }
         pidfile[i + 1] = '/';
     }
-    int fd = open(pidfile, O_WRONLY | O_CREAT | O_EXCL);
+    int fd = open(pidfile, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC);
     if (fd == -1) {
         fprintf(stderr, "Unable to create pidfile %s.\n", pidfile);
         return -1;
