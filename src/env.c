@@ -24,6 +24,8 @@ int parse_envs(env_t * env, char **envs, size_t envs_count, bool gui)
             return -1;
         }
         // if (memcmp())
+        // if not match copy and increment env->envs_count
+        // replace existing if not unique...
     }
     // check if user defined envs replaces term, lang, path, home, shell and user
     if (!env->path) {

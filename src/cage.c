@@ -1,5 +1,4 @@
 #include "cage.h"
-#include "mem.h"
 #include "proc.h"
 #include "env.h"
 #include "io.h"
@@ -91,11 +90,7 @@ int spawn_cage(config_t * config)
         return -1;
     }
 
-    char *root = mem_append(CAGE_ROOT, CAGE_ROOT_SIZE + 1, NULL, 0, NULL, 0);
-    if (!root) {
-        return -1;
-    }
-
+    char root[] = CAGE_ROOT;
     if (io_mkdir(root, CAGE_ROOT_SIZE)) {
         return -1;
     }
@@ -144,19 +139,11 @@ int spawn_cage(config_t * config)
     } else if (close_pid(fd)) {
         return -1;
     }
+    // TODO: compute gui mounts? - after mounts because guest XDG_RUNTIME_DIR should be based on guest user id, but before chroot to be possible to bind
 
     if (changeroot(mounts.root)) {
         return -1;
     }
-    // TODO: check uid gid groups...
-    // TODO: compute user, shell, home, unless user defined before
-    // TODO: if no home found create /tmp/.home
-
-    // TODO: compute gui mounts? - after mounts because guest XDG_RUNTIME_DIR should be based on guest user id
-
-    // TODO: create currentdir if do not exists before launch after mount
-
-    //execve "/bin/sh", {"-sh",NULL}, env...
 
     return launch_cage(&envs);
 }
@@ -181,10 +168,6 @@ static int spawn_existing(config_t * config, env_t * envs)
         }
         return 1;
     }
-    // compute envs... term, lang, home, shell, user, path...
-    // could consider env from previous instance (/proc/:id/environ)
-    // to avoid problems when called by different user, but it could
-    // change if exec env is called
 
     ret = changeroot_pid(pid);
     if (ret == -1) {
@@ -207,6 +190,13 @@ static int launch_cage(env_t * envs)
 {
     char *home = envs->home;
     char *user = envs->user;
+
+    // TODO: check uid gid groups...
+    // TODO: compute user, shell, home, unless user defined before
+    // TODO: if no home found create /tmp/.home
+
+    // TODO: create currentdir if do not exists before launch after mount, user as owner!!!!
+
     char *user_envs[envs->envs_count + 6];
     user_envs[0] = envs->path;
     user_envs[1] = envs->term;
@@ -217,6 +207,7 @@ static int launch_cage(env_t * envs)
         memcpy(user_envs + 5, envs->envs, envs->envs_count * sizeof(char *));
     }
     user_envs[envs->envs_count + 5] = NULL;
+
     launch_t instance = {
         .path = envs->path + 5,
         .init = NULL,
