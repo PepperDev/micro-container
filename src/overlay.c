@@ -1,17 +1,18 @@
 #include "overlay.h"
 #include "mem.h"
+#include "io.h"
 #include <string.h>
 
 static void buffer_append_opt(buffer_t, char *, size_t);
 
-char *compute_overlay(config_t * config, size_t name_size, bool overlay2, size_t *upper_size, size_t *work_size)
+char *compute_overlay(config_t * config, size_t name_size, bool overlay2, size_t *upper_size, size_t *work_size,
+                      size_t *lower_size)
 {
-    size_t lower_size = 0;
     if (config->lowerdir && *config->lowerdir) {
-        lower_size = strlen(config->lowerdir);
+        *lower_size = strlen(config->lowerdir);
     } else {
         config->lowerdir = "/";
-        lower_size = 1;
+        *lower_size = 1;
     }
     *upper_size = 0;
     *work_size = 0;
@@ -51,12 +52,12 @@ char *compute_overlay(config_t * config, size_t name_size, bool overlay2, size_t
         }
     }
 
-    buffer_t buf = buffer_new(lower_size + *upper_size + *work_size + 64);
+    buffer_t buf = buffer_new(*lower_size + *upper_size + *work_size + 64);
     if (!buf) {
         return NULL;
     }
     buffer_write_data(buf, 9, "lowerdir=");
-    buffer_append_opt(buf, config->lowerdir, lower_size);
+    buffer_append_opt(buf, config->lowerdir, *lower_size);
     buffer_write_data(buf, 10, ",upperdir=");
     buffer_append_opt(buf, config->upperdir, *upper_size);
     if (overlay2) {
@@ -86,4 +87,17 @@ static void buffer_append_opt(buffer_t buf, char *data, size_t size)
     if (last < end) {
         buffer_write_data(buf, end - last, last);
     }
+}
+
+int overlay_filesystem(char *upper_dir, size_t upper_size, char *lower_dir, size_t lower_size)
+{
+    int ret = io_exists(upper_dir);
+    if (ret == -1) {
+        return -1;
+    }
+    if (ret) {
+        // char *aux;
+    }
+    // TODO: if lowerdir is parent of upperdir truncate 10G, mke2fs, losetup and loop mount "${upperdir}/../.." if appdir is empty
+    return 0;
 }

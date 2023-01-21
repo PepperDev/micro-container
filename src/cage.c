@@ -69,8 +69,8 @@ int spawn_cage(config_t * config)
         }
     }
 
-    size_t upper_size, work_size;
-    char *opts = compute_overlay(config, name_size, overlay2, &upper_size, &work_size);
+    size_t upper_size, work_size, lower_size;
+    char *opts = compute_overlay(config, name_size, overlay2, &upper_size, &work_size, &lower_size);
     if (!opts) {
         return -1;
     }
@@ -83,15 +83,20 @@ int spawn_cage(config_t * config)
         fprintf(stderr, "Lowerdir %s does not exists\n", config->lowerdir);
         return -1;
     }
-    // TODO: warn if workdir and upperdir are in different filesystem but keep going...
 
-    // TODO: if lowerdir is parent of upperdir truncate 10G, mke2fs, losetup and loop mount "${upperdir}/../.." if appdir is empty
+    if (overlay_filesystem(config->upperdir, upper_size, config->lowerdir, lower_size)) {
+        return -1;
+    }
 
     if (io_mkdir(config->upperdir, upper_size)) {
         return -1;
     }
-    if (overlay2 && io_mkdir(config->workdir, work_size)) {
-        return -1;
+
+    if (overlay2) {
+        if (io_mkdir(config->workdir, work_size)) {
+            return -1;
+        }
+        // TODO: warn if workdir and upperdir are in different filesystem but keep going...
     }
 
     char root[] = CAGE_ROOT;
