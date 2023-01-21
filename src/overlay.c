@@ -1,9 +1,14 @@
 #include "overlay.h"
 #include "mem.h"
 #include "io.h"
+#include "proc.h"
 #include <string.h>
+#include <stdio.h>
+#include <sys/mount.h>
 
 static void buffer_append_opt(buffer_t, char *, size_t);
+
+static int test_filesystem(char *, size_t, char *, size_t);
 
 char *compute_overlay(config_t * config, size_t name_size, bool overlay2, size_t *upper_size, size_t *work_size,
                       size_t *lower_size)
@@ -91,13 +96,157 @@ static void buffer_append_opt(buffer_t buf, char *data, size_t size)
 
 int overlay_filesystem(char *upper_dir, size_t upper_size, char *lower_dir, size_t lower_size)
 {
+    // TODO: use realpath?
     int ret = io_exists(upper_dir);
     if (ret == -1) {
         return -1;
     }
-    if (ret) {
-        // char *aux;
+    bool test = true;
+    if (!ret) {
+        ret = test_filesystem(upper_dir, upper_size, lower_dir, lower_size);
+        if (ret == -1) {
+            return -1;
+        }
+        if (ret) {
+            return 0;
+        }
+        test = false;
     }
-    // TODO: if lowerdir is parent of upperdir truncate 10G, mke2fs, losetup and loop mount "${upperdir}/../.." if appdir is empty
+
+    size_t i = upper_size - 1;
+    while (i && upper_dir[i] != '/') {
+        i--;
+    }
+    while (i && upper_dir[i] == '/') {
+        i--;
+    }
+    if (!i) {
+        fprintf(stderr, "Unable to find parent of %s.\n", upper_dir);
+        return -1;
+    }
+    if (test) {
+        upper_dir[i + 1] = 0;
+        ret = io_exists(upper_dir);
+        if (ret == -1) {
+            return -1;
+        }
+        if (!ret) {
+            ret = test_filesystem(upper_dir, i + 1, lower_dir, lower_size);
+            if (ret == -1) {
+                return -1;
+            }
+            if (ret) {
+                upper_dir[i + 1] = '/';
+                return 0;
+            }
+            test = false;
+        }
+        upper_dir[i + 1] = '/';
+    }
+    while (i && upper_dir[i] != '/') {
+        i--;
+    }
+    while (i && upper_dir[i] == '/') {
+        i--;
+    }
+    if (!i) {
+        fprintf(stderr, "Unable to find second parent of %s.\n", upper_dir);
+        return -1;
+    }
+    i++;
+    upper_dir[i] = 0;
+    if (io_mkdir(upper_dir, i)) {
+        return -1;
+    }
+    if (test) {
+        ret = test_filesystem(upper_dir, i, lower_dir, lower_size);
+        if (ret == -1) {
+            return -1;
+        }
+        if (ret) {
+            upper_dir[i] = '/';
+            return 0;
+        }
+    }
+
+    fprintf(stderr, "Lower filesystem is parent of upper filesystem, trying to mount loop...\n");
+
+    char *img = mem_append(upper_dir, i, ".img", 5, NULL, 0);
+    if (!img) {
+        return -1;
+    }
+
+    ret = io_exists(img);
+    if (ret == -1) {
+        return -1;
+    }
+
+    bool mkfs = false;
+    if (ret) {
+        if (io_truncate(img, (off_t) 10 * 1024 * 1024 * 1024)) {
+            return -1;
+        }
+        mkfs = true;
+    } else {
+        ret = io_blankfirststsector(img);
+        if (ret == -1) {
+            return -1;
+        }
+        if (!ret) {
+            mkfs = true;
+        }
+    }
+
+    if (mkfs) {
+        char *args[] = {
+            "mke2fs",
+            "-Text4",
+            "-m0",
+            "-i65536",
+            "-F",
+            img,
+            NULL
+        };
+        if (fork_and_exec(args)) {
+            return -1;
+        }
+    }
+
+    if (mount(img, upper_dir, NULL, 0, NULL)) {
+        fprintf(stderr, "Unable to mount image %s.\n", img);
+        return -1;
+    }
+    upper_dir[i] = '/';
     return 0;
+}
+
+static int test_filesystem(char *upper, size_t upper_size, char *lower, size_t lower_size)
+{
+    while (upper_size && upper[upper_size - 1] == '/') {
+        upper_size--;
+    }
+    while (lower_size && lower[lower_size - 1] == '/') {
+        lower_size--;
+    }
+    if (lower_size > upper_size) {
+        return 1;
+    }
+    if (memcmp(lower, upper, lower_size)) {
+        return 1;
+    }
+    if (upper[lower_size] && upper[lower_size] != '/') {
+        return 1;
+    }
+    struct stat fst;
+    if (io_stat(lower, &fst)) {
+        return -1;
+    }
+    dev_t dev = fst.st_dev;
+    if (io_stat(upper, &fst)) {
+        return -1;
+    }
+    if (dev == fst.st_dev) {
+        return 0;
+    }
+    return 1;
 }

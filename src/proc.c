@@ -239,3 +239,24 @@ int pidexists(pid_t pid)
     }
     return 0;
 }
+
+int fork_and_exec(char **args)
+{
+    pid_t pid = vfork();
+    if (pid == -1) {
+        fprintf(stderr, "Unable to fork process.\n");
+    }
+    if (!pid) {
+        execvp(args[0], args);
+        return -1;
+    }
+    int status = -1;
+    if (pidwait(pid, NULL)) {
+        return -1;
+    }
+    if (status) {
+        fprintf(stderr, "Process exited with failure %s.\n", args[0]);
+        return -1;
+    }
+    return 0;
+}

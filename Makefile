@@ -39,7 +39,7 @@ $(TARGET): $(OBJS) | bin
 .objs/io.o: src/io.h
 .objs/proc.o: src/proc.h src/mem.h src/io.h
 .objs/env.o: src/env.h src/mem.h
-.objs/overlay.o: src/overlay.h src/config.h src/mem.h src/io.h
+.objs/overlay.o: src/overlay.h src/config.h src/mem.h src/io.h src/proc.h
 .objs/mount.o: src/mount.h src/proc.h src/io.h
 .objs/root.o: src/root.h src/proc.h
 .objs/launch.o: src/launch.h src/proc.h

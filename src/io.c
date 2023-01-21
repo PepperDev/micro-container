@@ -6,6 +6,11 @@
 #include <errno.h>
 #include <fcntl.h>
 
+#define SECTOR_HEADER 4096
+
+static int io_open(char *, int, int);
+static int io_close(int);
+
 int io_isoverlay2supported()
 {
     struct utsname suname;
@@ -87,13 +92,11 @@ int io_mkdir(char *dir, size_t size)
 
 int io_touch(char *file)
 {
-    int fd = open(file, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+    int fd = io_open(file, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
     if (fd == -1) {
-        fprintf(stderr, "Unable to open file %s\n", file);
         return -1;
     }
-    if (close(fd)) {
-        fprintf(stderr, "Unable to close file %s\n", file);
+    if (io_close(fd)) {
         return -1;
     }
     return 0;
@@ -101,17 +104,64 @@ int io_touch(char *file)
 
 int io_truncate(char *file, off_t size)
 {
-    int fd = open(file, O_WRONLY | O_NONBLOCK | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+    int fd = io_open(file, O_WRONLY | O_NONBLOCK | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
     if (fd == -1) {
-        fprintf(stderr, "Unable to create file %s\n", file);
         return -1;
     }
     if (ftruncate(fd, size)) {
         fprintf(stderr, "Unable to truncate file %s\n", file);
         return -1;
     }
+    if (io_close(fd)) {
+        return -1;
+    }
+    return 0;
+}
+
+int io_blankfirststsector(char *file)
+{
+    int fd = io_open(file, O_RDONLY, 0);
+    if (fd == -1) {
+        return -1;
+    }
+    char buf[SECTOR_HEADER];
+    if (read(fd, buf, SECTOR_HEADER) != SECTOR_HEADER) {
+        fprintf(stderr, "Unable to read file %s\n", file);
+        return -1;
+    }
+    if (io_close(fd)) {
+        return -1;
+    }
+    for (int i = SECTOR_HEADER; i--;) {
+        if (buf[i]) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int io_stat(char *file, struct stat *fst)
+{
+    if (stat(file, fst)) {
+        fprintf(stderr, "Unable to stat file %s.\n", file);
+        return -1;
+    }
+    return 0;
+}
+
+static int io_open(char *file, int flags, int mode)
+{
+    int fd = open(file, flags, mode);
+    if (fd == -1) {
+        fprintf(stderr, "Unable to open file %s.\n", file);
+    }
+    return fd;
+}
+
+static int io_close(int fd)
+{
     if (close(fd)) {
-        fprintf(stderr, "Unable to close file %s\n", file);
+        fprintf(stderr, "Unable to close file.\n");
         return -1;
     }
     return 0;

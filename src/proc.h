@@ -22,4 +22,6 @@ int pidwait(pid_t, int *);
 
 int pidexists(pid_t);
 
+int fork_and_exec(char **);
+
 #endif
