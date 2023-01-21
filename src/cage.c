@@ -1,6 +1,8 @@
 #include "cage.h"
+#include "mem.h"
 #include "proc.h"
 #include "env.h"
+#include "user.h"
 #include "io.h"
 #include "overlay.h"
 #include "mount.h"
@@ -12,9 +14,11 @@
 
 #define CAGE_ROOT "/tmp/.cageroot"
 #define CAGE_ROOT_SIZE 14
+#define FILE_PASSWD "/etc/passwd"
+#define FILE_GROUP "/etc/group"
 
 static int spawn_existing(config_t *, env_t *);
-static int launch_cage(env_t *);
+static int launch_cage(env_t *, user_t *);
 
 // compute_cage
 int spawn_cage(config_t * config)
@@ -139,13 +143,20 @@ int spawn_cage(config_t * config)
     } else if (close_pid(fd)) {
         return -1;
     }
+
+    user_t user;
+    if (parse_user
+        (&user, CAGE_ROOT FILE_PASSWD, CAGE_ROOT FILE_GROUP, config->user, config->group, envs.user, envs.home,
+         envs.shell, config->initscript)) {
+        return -1;
+    }
     // TODO: compute gui mounts? - after mounts because guest XDG_RUNTIME_DIR should be based on guest user id, but before chroot to be possible to bind
 
     if (changeroot(mounts.root)) {
         return -1;
     }
 
-    return launch_cage(&envs);
+    return launch_cage(&envs, &user);
 }
 
 static int spawn_existing(config_t * config, env_t * envs)
@@ -183,40 +194,77 @@ static int spawn_existing(config_t * config, env_t * envs)
 
     config->initscript = NULL;
 
-    return launch_cage(envs);
+    user_t user;
+    if (parse_user
+        (&user, FILE_PASSWD, FILE_GROUP, config->user, config->group, envs->user, envs->home, envs->shell, false)) {
+        return -1;
+    }
+
+    return launch_cage(envs, &user);
 }
 
-static int launch_cage(env_t * envs)
+static int launch_cage(env_t * envs, user_t * users)
 {
     char *home = envs->home;
     char *user = envs->user;
+    char *shell = envs->shell;
 
-    // TODO: check uid gid groups...
-    // TODO: compute user, shell, home, unless user defined before
-    // TODO: if no home found create /tmp/.home
-
+    if (!home) {
+        if (users->home) {
+            home = mem_append("HOME=", 5, users->home, users->home_size + 1, NULL, 0);
+            if (!home) {
+                return -1;
+            }
+        } else {
+            home = "HOME=/tmp/.home";
+            // TODO: create /tmp/.home with uid as owner and gid as group
+        }
+    }
+    if (!shell) {
+        if (users->shell) {
+            shell = mem_append("SHELL=", 6, users->shell, users->shell_size + 1, NULL, 0);
+            if (!shell) {
+                return -1;
+            }
+        } else {
+            shell = "SHELL=/bin/sh";
+        }
+    }
+    if (!user) {
+        if (users->name) {
+            user = mem_append("USER=", 5, users->name, users->name_size + 1, NULL, 0);
+            if (!user) {
+                return -1;
+            }
+        }
+    }
     // TODO: create currentdir if do not exists before launch after mount, user as owner!!!!
 
-    char *user_envs[envs->envs_count + 6];
-    user_envs[0] = envs->path;
-    user_envs[1] = envs->term;
-    user_envs[2] = envs->lang;
-    user_envs[3] = home ? home : "HOME=/root";  // not here
-    user_envs[4] = user ? user : "USER=root";   // not here
-    if (envs->envs_count) {
-        memcpy(user_envs + 5, envs->envs, envs->envs_count * sizeof(char *));
+    size_t i = 0;
+    char *user_envs[envs->envs_count + 7];
+    user_envs[i++] = envs->path;
+    user_envs[i++] = envs->term;
+    user_envs[i++] = envs->lang;
+    user_envs[i++] = home;
+    user_envs[i++] = shell;
+    if (user) {
+        user_envs[i++] = user;
     }
-    user_envs[envs->envs_count + 5] = NULL;
+    if (envs->envs_count) {
+        memcpy(user_envs + i, envs->envs, envs->envs_count * sizeof(char *));
+        i += envs->envs_count;
+    }
+    user_envs[i] = NULL;
 
     launch_t instance = {
         .path = envs->path + 5,
         .init = NULL,
         .init_args = NULL,
         .init_envs = NULL,
-        .uid = 0,
-        .gid = 0,
-        .groups_count = 0,
-        .groups = NULL,
+        .uid = users->uid,
+        .gid = users->gid,
+        .groups_count = users->groups_count,
+        .groups = users->groups,
         .dir = NULL,
         .command = "/bin/sh",
         .args = (char *[]) {"-sh", NULL},
