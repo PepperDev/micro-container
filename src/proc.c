@@ -86,9 +86,7 @@ int killpid(char *name, char *pidfile)
                 }
                 dowait = false;
             }
-            // pidwait without errors
-            if (dowait && waitpid(pid, NULL, 0) == -1 && errno != ECHILD) {
-                fprintf(stderr, "Unable to wait process %d.\n", pid);
+            if (dowait && pidwait(pid, NULL)) {
                 return -1;
             }
         }
@@ -170,7 +168,7 @@ int create_pidfile(char *pidfile, size_t size)
         }
         pidfile[i + 1] = '/';
     }
-    int fd = open(pidfile, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC);
+    int fd = open(pidfile, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
     if (fd == -1) {
         fprintf(stderr, "Unable to create pidfile %s.\n", pidfile);
         return -1;
@@ -223,16 +221,16 @@ int close_pid(int fd)
     return 0;
 }
 
-int pidwait(pid_t pid)
+int pidwait(pid_t pid, int *status)
 {
-    int status = 0;
-    if (waitpid(pid, &status, 0) == -1) {
+    if (waitpid(pid, status, 0) == -1 && errno != ECHILD) {
         fprintf(stderr, "Unable to wait process %d.\n", pid);
         return -1;
     }
+    // if status try to parse it?
     // WTERMSIG(status) || WEXITSTATUS(status)
     // WIFSIGNALED(status) ? WTERMSIG(status) : WEXITSTATUS(status)
-    return status;
+    return 0;
 }
 
 int pidexists(pid_t pid)

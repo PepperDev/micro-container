@@ -18,7 +18,7 @@ int writepid(int, pid_t);
 
 int close_pid(int);
 
-int pidwait(pid_t);
+int pidwait(pid_t, int *);
 
 int pidexists(pid_t);
 

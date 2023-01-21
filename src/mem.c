@@ -121,8 +121,7 @@ static void buffer_grow(buffer_local * buf, size_t required)
     if (buf->length + required <= buf->capacity) {
         return;
     }
-    buf->capacity = buf->length + required;
-    buf->capacity += (64 - buf->capacity) % 64;
+    buf->capacity = (size_t)((buf->length + required + 63) / 64) * 64;
     if (!buf->data) {
         return;
     }

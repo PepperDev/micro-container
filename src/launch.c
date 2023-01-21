@@ -48,7 +48,11 @@ int launch(launch_t * launch)
             };
             return launch_exec(&value);
         }
-        if (pidwait(pid)) {
+        int status = -1;
+        if (pidwait(pid, &status)) {
+            return -1;
+        }
+        if (status) {
             fprintf(stderr, "Init process failed.\n");
             return -1;
         }

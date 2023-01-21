@@ -56,7 +56,7 @@ int changeroot_pid(pid_t pid)
         return -1;
     }
     if (newpid) {
-        if (pidwait(newpid)) {
+        if (pidwait(newpid, NULL)) {
             return -1;
         }
         return 1;

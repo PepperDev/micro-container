@@ -8,6 +8,9 @@
 #include <unistd.h>
 #include <string.h>
 
+#define CAGE_ROOT "/tmp/.cageroot"
+#define CAGE_ROOT_SIZE 14
+
 static int spawn_existing(config_t *);
 static int launch_cage();
 
@@ -90,19 +93,23 @@ int spawn_cage(config_t * config)
         .dev = "/dev",
         .dev_pts = "/dev/pts",
         .resolv = "/etc/resolv.conf",
-        .root = "/tmp",
+        .root = CAGE_ROOT,
         .overlay_opts = opts,
-        .root_dev = "/tmp/dev",
-        .root_dev_pts = "/tmp/dev/pts",
-        .root_proc = "/tmp/proc",
-        .root_sys = "/tmp/sys",
-        .root_tmp = "/tmp/tmp",
-        .root_var_tmp = "/tmp/var/tmp",
-        .root_run = "/tmp/run",
-        .root_resolv = "/tmp/etc/resolv.conf"
+        .root_dev = CAGE_ROOT "/dev",
+        .root_dev_pts = CAGE_ROOT "/dev/pts",
+        .root_proc = CAGE_ROOT "/proc",
+        .root_sys = CAGE_ROOT "/sys",
+        .root_tmp = CAGE_ROOT "/tmp",
+        .root_var_tmp = CAGE_ROOT "/var/tmp",
+        .root_run = CAGE_ROOT "/run",
+        .root_resolv = CAGE_ROOT "/etc/resolv.conf"
             // TODO: shm
             // TODO: user defined mounts
     };
+
+    if (io_mkdir(mounts.root, CAGE_ROOT_SIZE)) {
+        return -1;
+    }
 
     pid_t pid = 0;
     if (prepare_mounts(&mounts, &pid)) {
@@ -113,7 +120,14 @@ int spawn_cage(config_t * config)
         if (writepid(fd, pid)) {
             return -1;
         }
-        return pidwait(pid);
+        int status = 0;
+        if (pidwait(pid, &status)) {
+            return -1;
+        }
+        if (io_unlink(config->pidfile)) {
+            return -1;
+        }
+        return status;
     } else if (close_pid(fd)) {
         return -1;
     }
