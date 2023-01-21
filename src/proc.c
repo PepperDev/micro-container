@@ -109,12 +109,7 @@ char *compute_pidfile(char *name, size_t size, size_t *len)
         if (len) {
             *len = 23;
         }
-        char *dup = mem_allocate(24);
-        if (!dup) {
-            return NULL;
-        }
-        memcpy(dup, "/run/microcontainer/pid", 24);
-        return dup;
+        return mem_append("/run/microcontainer/pid", 23, NULL, 0, NULL, 0);
     }
     if (len) {
         *len = 24 + size;

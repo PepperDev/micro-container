@@ -39,8 +39,10 @@ char *mem_append(char *prefix, size_t prefix_size, char *base, size_t base_size,
     }
     memcpy(mem, prefix, prefix_size);
     char *aux = mem + prefix_size;
-    memcpy(aux, base, base_size);
-    aux += base_size;
+    if (base_size) {
+        memcpy(aux, base, base_size);
+        aux += base_size;
+    }
     if (suffix_size) {
         memcpy(aux, suffix, suffix_size);
     }

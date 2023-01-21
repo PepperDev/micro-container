@@ -7,6 +7,7 @@
 #include "launch.h"
 #include <unistd.h>
 #include <string.h>
+#include <stdio.h>
 
 #define CAGE_ROOT "/tmp/.cageroot"
 #define CAGE_ROOT_SIZE 14
@@ -47,6 +48,7 @@ int spawn_cage(config_t * config)
         }
     }
     // TODO: validate user defined envs, should contain '=', make key unique, consider last
+    // TODO: if gui compute host's XDG_RUNTIME_DIR
 
     ret = io_isoverlay2supported();
     if (ret == -1) {
@@ -64,8 +66,15 @@ int spawn_cage(config_t * config)
     if (!opts) {
         return -1;
     }
-    // TODO: abort if lowerdir doesn't exist
 
+    ret = io_exists(config->lowerdir);
+    if (ret == -1) {
+        return -1;
+    }
+    if (ret) {
+        fprintf(stderr, "Lowerdir %s does not exists\n", config->lowerdir);
+        return -1;
+    }
     // TODO: warn if workdir and upperdir are in different filesystem but keep going...
 
     // TODO: if lowerdir is parent of upperdir truncate 10G, mke2fs, losetup and loop mount "${upperdir}/../.." if appdir is empty
@@ -76,13 +85,6 @@ int spawn_cage(config_t * config)
     if (overlay2 && io_mkdir(config->workdir, work_size)) {
         return -1;
     }
-
-    int fd = create_pidfile(config->pidfile, pidfile_size);
-    if (fd == -1) {
-        return -1;
-    }
-    // if gui compute host's XDG_RUNTIME_DIR
-
     // check if user defined envs replaces term, lang, path, home, shell and user
     // reuse host term or vt100
     // reuser host lang or lang=C if not set
@@ -108,6 +110,11 @@ int spawn_cage(config_t * config)
     };
 
     if (io_mkdir(mounts.root, CAGE_ROOT_SIZE)) {
+        return -1;
+    }
+
+    int fd = create_pidfile(config->pidfile, pidfile_size);
+    if (fd == -1) {
         return -1;
     }
 
