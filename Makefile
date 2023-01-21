@@ -7,6 +7,7 @@ SOURCES = $(patsubst %,src/%.c, \
 		config \
 		io \
 		proc \
+		env \
 		overlay \
 		mount \
 		root \
@@ -37,11 +38,12 @@ $(TARGET): $(OBJS) | bin
 .objs/config.o: src/config.h src/mem.h
 .objs/io.o: src/io.h
 .objs/proc.o: src/proc.h src/mem.h src/io.h
+.objs/env.o: src/env.h src/mem.h
 .objs/overlay.o: src/overlay.h src/config.h src/mem.h
 .objs/mount.o: src/mount.h src/proc.h
 .objs/root.o: src/root.h src/proc.h
 .objs/launch.o: src/launch.h src/proc.h
-.objs/cage.o: src/cage.h src/config.h src/proc.h src/io.h src/overlay.h src/mount.h src/root.h src/launch.h
+.objs/cage.o: src/cage.h src/config.h src/proc.h src/env.h src/io.h src/overlay.h src/mount.h src/root.h src/launch.h
 .objs/main.o: src/user.h src/config.h src/proc.h src/cage.h
 
 $(DIRS):

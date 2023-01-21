@@ -4,8 +4,6 @@
 #include <stdio.h>
 #include <sys/stat.h>
 
-// TODO: obtain caller from real uid or SUDO_USER or parent process
-
 int check_superuser(int argc, char *argv[])
 {
     uid_t uid = geteuid();

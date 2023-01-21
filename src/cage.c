@@ -1,5 +1,6 @@
 #include "cage.h"
 #include "proc.h"
+#include "env.h"
 #include "io.h"
 #include "overlay.h"
 #include "mount.h"
@@ -34,6 +35,11 @@ int spawn_cage(config_t * config)
         }
     }
 
+    env_t envs;
+    if (parse_envs(&envs, config->envs, config->envs_count, config->gui)) {
+        return -1;
+    }
+
     int ret = io_exists(config->pidfile);
     if (ret == -1) {
         return -1;
@@ -47,8 +53,6 @@ int spawn_cage(config_t * config)
             return 0;
         }
     }
-    // TODO: validate user defined envs, should contain '=', make key unique, consider last
-    // TODO: if gui compute host's XDG_RUNTIME_DIR
 
     ret = io_isoverlay2supported();
     if (ret == -1) {
@@ -85,10 +89,6 @@ int spawn_cage(config_t * config)
     if (overlay2 && io_mkdir(config->workdir, work_size)) {
         return -1;
     }
-    // check if user defined envs replaces term, lang, path, home, shell and user
-    // reuse host term or vt100
-    // reuser host lang or lang=C if not set
-    // path=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin unless user defined env
 
     mount_t mounts = {
         .overlay_type = overlay2 ? "overlay" : "overlayfs",
