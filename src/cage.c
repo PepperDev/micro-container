@@ -1,4 +1,5 @@
 #include "cage.h"
+#include "mem.h"
 #include "proc.h"
 #include "env.h"
 #include "io.h"
@@ -13,8 +14,8 @@
 #define CAGE_ROOT "/tmp/.cageroot"
 #define CAGE_ROOT_SIZE 14
 
-static int spawn_existing(config_t *);
-static int launch_cage();
+static int spawn_existing(config_t *, env_t *);
+static int launch_cage(env_t *);
 
 // compute_cage
 int spawn_cage(config_t * config)
@@ -45,7 +46,7 @@ int spawn_cage(config_t * config)
         return -1;
     }
     if (!ret) {
-        ret = spawn_existing(config);
+        ret = spawn_existing(config, &envs);
         if (ret == -1) {
             return -1;
         }
@@ -90,12 +91,21 @@ int spawn_cage(config_t * config)
         return -1;
     }
 
+    char *root = mem_append(CAGE_ROOT, CAGE_ROOT_SIZE + 1, NULL, 0, NULL, 0);
+    if (!root) {
+        return -1;
+    }
+
+    if (io_mkdir(root, CAGE_ROOT_SIZE)) {
+        return -1;
+    }
+
     mount_t mounts = {
         .overlay_type = overlay2 ? "overlay" : "overlayfs",
         .dev = "/dev",
         .dev_pts = "/dev/pts",
         .resolv = "/etc/resolv.conf",
-        .root = CAGE_ROOT,
+        .root = root,
         .overlay_opts = opts,
         .root_dev = CAGE_ROOT "/dev",
         .root_dev_pts = CAGE_ROOT "/dev/pts",
@@ -108,10 +118,6 @@ int spawn_cage(config_t * config)
             // TODO: shm
             // TODO: user defined mounts
     };
-
-    if (io_mkdir(mounts.root, CAGE_ROOT_SIZE)) {
-        return -1;
-    }
 
     int fd = create_pidfile(config->pidfile, pidfile_size);
     if (fd == -1) {
@@ -152,10 +158,10 @@ int spawn_cage(config_t * config)
 
     //execve "/bin/sh", {"-sh",NULL}, env...
 
-    return launch_cage();
+    return launch_cage(&envs);
 }
 
-static int spawn_existing(config_t * config)
+static int spawn_existing(config_t * config, env_t * envs)
 {
     int fd;
     pid_t pid = readpid(config->pidfile, &fd);
@@ -194,13 +200,25 @@ static int spawn_existing(config_t * config)
 
     config->initscript = NULL;
 
-    return launch_cage();
+    return launch_cage(envs);
 }
 
-static int launch_cage()
+static int launch_cage(env_t * envs)
 {
+    char *home = envs->home;
+    char *user = envs->user;
+    char *user_envs[envs->envs_count + 6];
+    user_envs[0] = envs->path;
+    user_envs[1] = envs->term;
+    user_envs[2] = envs->lang;
+    user_envs[3] = home ? home : "HOME=/root";  // not here
+    user_envs[4] = user ? user : "USER=root";   // not here
+    if (envs->envs_count) {
+        memcpy(user_envs + 5, envs->envs, envs->envs_count * sizeof(char *));
+    }
+    user_envs[envs->envs_count + 5] = NULL;
     launch_t instance = {
-        .path = "/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin",
+        .path = envs->path + 5,
         .init = NULL,
         .init_args = NULL,
         .init_envs = NULL,
@@ -211,13 +229,7 @@ static int launch_cage()
         .dir = NULL,
         .command = "/bin/sh",
         .args = (char *[]) {"-sh", NULL},
-        .envs = (char *[]) {
-                            "PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin",
-                            "TERM=vt100",
-                            "LANG=C",
-                            "HOME=/root",
-                            "USER=root",
-                            NULL}
+        .envs = user_envs,
     };
     if (launch(&instance)) {
         return -1;

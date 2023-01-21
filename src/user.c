@@ -6,8 +6,13 @@
 
 int check_superuser(int argc, char *argv[])
 {
-    uid_t uid = geteuid();
-    if (uid == 0) {
+    if (geteuid() == 0) {
+        if (getegid()) {
+            if (setegid(0)) {
+                fprintf(stderr, "Unable to change effective group.\n");
+                return -1;
+            }
+        }
         struct stat fst;
         char *path = "/proc/self/exe";
         if (stat(path, &fst)) {

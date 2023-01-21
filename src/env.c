@@ -14,6 +14,7 @@ static char *env_default(char *, size_t, char *);
 int parse_envs(env_t * env, char **envs, size_t envs_count, bool gui)
 {
     memset(env, 0, sizeof(env_t));
+    env->envs = envs;
     // TODO: validate user defined envs, should contain '=', make key unique, consider last
     // TODO: store sorted keys to make it unique, use bsearch
     for (size_t i = 0; i < envs_count; i++) {
@@ -32,7 +33,7 @@ int parse_envs(env_t * env, char **envs, size_t envs_count, bool gui)
         env->term = env_default(ENV_TERM, ENV_TERM_SIZE + 1, ENV_TERM "=vt100");
     }
     if (!env->lang) {
-        env->term = env_default(ENV_LANG, ENV_LANG_SIZE + 1, ENV_LANG "=C");
+        env->lang = env_default(ENV_LANG, ENV_LANG_SIZE + 1, ENV_LANG "=C");
     }
     if (gui && !env->xdg_runtime_dir) {
         char *val = getenv("XDG_RUNTIME_DIR");
