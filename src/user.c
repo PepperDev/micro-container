@@ -85,9 +85,11 @@ int parse_user(user_t * data, char *file_passwd, char *file_group, char *user, c
             data->name = user;
             data->name_size = size;
             // look for uid and envs...
+            // look for default group
         } else {
             found_uid = true;
             // look for envs only...
+            // look for default group
         }
     }
     if (group) {

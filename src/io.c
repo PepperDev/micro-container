@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <errno.h>
+#include <fcntl.h>
 
 int io_isoverlay2supported()
 {
@@ -79,6 +80,38 @@ int io_mkdir(char *dir, size_t size)
     }
     if (mkdir(dir, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH)) {
         fprintf(stderr, "Unable to create directory %s\n", dir);
+        return -1;
+    }
+    return 0;
+}
+
+int io_touch(char *file)
+{
+    int fd = open(file, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+    if (fd == -1) {
+        fprintf(stderr, "Unable to open file %s\n", file);
+        return -1;
+    }
+    if (close(fd)) {
+        fprintf(stderr, "Unable to close file %s\n", file);
+        return -1;
+    }
+    return 0;
+}
+
+int io_truncate(char *file, off_t size)
+{
+    int fd = open(file, O_WRONLY | O_NONBLOCK | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+    if (fd == -1) {
+        fprintf(stderr, "Unable to create file %s\n", file);
+        return -1;
+    }
+    if (ftruncate(fd, size)) {
+        fprintf(stderr, "Unable to truncate file %s\n", file);
+        return -1;
+    }
+    if (close(fd)) {
+        fprintf(stderr, "Unable to close file %s\n", file);
         return -1;
     }
     return 0;

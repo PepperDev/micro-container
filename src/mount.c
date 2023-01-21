@@ -1,4 +1,5 @@
 #include "mount.h"
+#include "io.h"
 #include "proc.h"
 //#include <unistd.h>
 #define _GNU_SOURCE             // required for unshare
@@ -60,7 +61,15 @@ int prepare_mounts(mount_t * mounts, pid_t * pid)
         return -1;
     }
 
-    // TODO: fix if broken due to link? touch file if does not exist?
+    int ret = io_exists(mounts->root_resolv);
+    if (ret == -1) {
+        return -1;
+    }
+
+    if (ret && io_touch(mounts->root_resolv)) {
+        return -1;
+    }
+
     if (mount_bind(mounts->resolv, mounts->root_resolv)) {
         return -1;
     }
