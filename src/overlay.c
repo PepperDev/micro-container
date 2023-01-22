@@ -8,8 +8,6 @@
 
 static void buffer_append_opt(buffer_t, char *, size_t);
 
-static int test_filesystem(char *, size_t, char *, size_t);
-
 char *compute_overlay(config_t * config, size_t name_size, bool overlay2, size_t *upper_size, size_t *work_size,
                       size_t *lower_size)
 {
@@ -73,47 +71,32 @@ char *compute_overlay(config_t * config, size_t name_size, bool overlay2, size_t
     return buffer_use(buf);
 }
 
-static void buffer_append_opt(buffer_t buf, char *data, size_t size)
-{
-    char *last = data;
-    char *end = data + size;
-
-    while (data < end) {
-        if (*data == '\\' || *data == ',') {
-            if (last < data) {
-                buffer_write_data(buf, data - last, last);
-            }
-            buffer_write_byte(buf, '\\');
-            buffer_write_byte(buf, *data);
-            last = data + 1;
-        }
-        data++;
-    }
-    if (last < end) {
-        buffer_write_data(buf, end - last, last);
-    }
-}
-
 int overlay_filesystem(char *upper_dir, size_t upper_size, char *lower_dir, size_t lower_size)
 {
     // TODO: use realpath?
-    int ret = io_exists(upper_dir);
-    if (ret == -1) {
-        return -1;
+    while (upper_size && upper_dir[upper_size - 1] == '/') {
+        upper_size--;
     }
-    bool test = true;
-    if (!ret) {
-        ret = test_filesystem(upper_dir, upper_size, lower_dir, lower_size);
-        if (ret == -1) {
-            return -1;
-        }
-        if (ret) {
-            return 0;
-        }
-        test = false;
+    while (lower_size && lower_dir[lower_size - 1] == '/') {
+        lower_size--;
+    }
+    if (lower_size > upper_size) {
+        return 0;
+    }
+    if (memcmp(lower_dir, upper_dir, lower_size)) {
+        return 0;
+    }
+    if (upper_dir[lower_size] && upper_dir[lower_size] != '/') {
+        return 0;
     }
 
     size_t i = upper_size - 1;
+    while (i && upper_dir[i] != '/') {
+        i--;
+    }
+    while (i && upper_dir[i] == '/') {
+        i--;
+    }
     while (i && upper_dir[i] != '/') {
         i--;
     }
@@ -124,49 +107,18 @@ int overlay_filesystem(char *upper_dir, size_t upper_size, char *lower_dir, size
         fprintf(stderr, "Unable to find parent of %s.\n", upper_dir);
         return -1;
     }
-    if (test) {
-        upper_dir[i + 1] = 0;
-        ret = io_exists(upper_dir);
-        if (ret == -1) {
-            return -1;
-        }
-        if (!ret) {
-            ret = test_filesystem(upper_dir, i + 1, lower_dir, lower_size);
-            if (ret == -1) {
-                return -1;
-            }
-            if (ret) {
-                upper_dir[i + 1] = '/';
-                return 0;
-            }
-            test = false;
-        }
-        upper_dir[i + 1] = '/';
-    }
-    while (i && upper_dir[i] != '/') {
-        i--;
-    }
-    while (i && upper_dir[i] == '/') {
-        i--;
-    }
-    if (!i) {
-        fprintf(stderr, "Unable to find second parent of %s.\n", upper_dir);
-        return -1;
-    }
     i++;
     upper_dir[i] = 0;
     if (io_mkdir(upper_dir, i)) {
         return -1;
     }
-    if (test) {
-        ret = test_filesystem(upper_dir, i, lower_dir, lower_size);
-        if (ret == -1) {
-            return -1;
-        }
-        if (ret) {
-            upper_dir[i] = '/';
-            return 0;
-        }
+    int ret = io_samefs(lower_dir, upper_dir);
+    if (ret == -1) {
+        return -1;
+    }
+    if (ret) {
+        upper_dir[i] = '/';
+        return 0;
     }
 
     fprintf(stderr, "Lower filesystem is parent of upper filesystem, trying to mount loop...\n");
@@ -212,6 +164,7 @@ int overlay_filesystem(char *upper_dir, size_t upper_size, char *lower_dir, size
         }
     }
 
+    // losetup?
     if (mount(img, upper_dir, NULL, 0, NULL)) {
         fprintf(stderr, "Unable to mount image %s.\n", img);
         return -1;
@@ -220,33 +173,23 @@ int overlay_filesystem(char *upper_dir, size_t upper_size, char *lower_dir, size
     return 0;
 }
 
-static int test_filesystem(char *upper, size_t upper_size, char *lower, size_t lower_size)
+static void buffer_append_opt(buffer_t buf, char *data, size_t size)
 {
-    while (upper_size && upper[upper_size - 1] == '/') {
-        upper_size--;
+    char *last = data;
+    char *end = data + size;
+
+    while (data < end) {
+        if (*data == '\\' || *data == ',') {
+            if (last < data) {
+                buffer_write_data(buf, data - last, last);
+            }
+            buffer_write_byte(buf, '\\');
+            buffer_write_byte(buf, *data);
+            last = data + 1;
+        }
+        data++;
     }
-    while (lower_size && lower[lower_size - 1] == '/') {
-        lower_size--;
+    if (last < end) {
+        buffer_write_data(buf, end - last, last);
     }
-    if (lower_size > upper_size) {
-        return 1;
-    }
-    if (memcmp(lower, upper, lower_size)) {
-        return 1;
-    }
-    if (upper[lower_size] && upper[lower_size] != '/') {
-        return 1;
-    }
-    struct stat fst;
-    if (io_stat(lower, &fst)) {
-        return -1;
-    }
-    dev_t dev = fst.st_dev;
-    if (io_stat(upper, &fst)) {
-        return -1;
-    }
-    if (dev == fst.st_dev) {
-        return 0;
-    }
-    return 1;
 }

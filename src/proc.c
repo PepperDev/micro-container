@@ -251,11 +251,11 @@ int fork_and_exec(char **args)
         return -1;
     }
     int status = -1;
-    if (pidwait(pid, NULL)) {
+    if (pidwait(pid, &status)) {
         return -1;
     }
     if (status) {
-        fprintf(stderr, "Process exited with failure %s.\n", args[0]);
+        fprintf(stderr, "Process exited with failure %s %d.\n", args[0], status);
         return -1;
     }
     return 0;

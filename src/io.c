@@ -10,6 +10,7 @@
 
 static int io_open(char *, int, int);
 static int io_close(int);
+static int io_stat(char *, struct stat *);
 
 int io_isoverlay2supported()
 {
@@ -140,13 +141,20 @@ int io_blankfirststsector(char *file)
     return 0;
 }
 
-int io_stat(char *file, struct stat *fst)
+int io_samefs(char *source, char *target)
 {
-    if (stat(file, fst)) {
-        fprintf(stderr, "Unable to stat file %s.\n", file);
+    struct stat fst;
+    if (io_stat(source, &fst)) {
         return -1;
     }
-    return 0;
+    dev_t dev = fst.st_dev;
+    if (io_stat(target, &fst)) {
+        return -1;
+    }
+    if (dev == fst.st_dev) {
+        return 0;
+    }
+    return 1;
 }
 
 static int io_open(char *file, int flags, int mode)
@@ -162,6 +170,15 @@ static int io_close(int fd)
 {
     if (close(fd)) {
         fprintf(stderr, "Unable to close file.\n");
+        return -1;
+    }
+    return 0;
+}
+
+static int io_stat(char *file, struct stat *fst)
+{
+    if (stat(file, fst)) {
+        fprintf(stderr, "Unable to stat file %s.\n", file);
         return -1;
     }
     return 0;
