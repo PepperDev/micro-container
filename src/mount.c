@@ -1,17 +1,19 @@
 #include "mount.h"
+#include "mem.h"
 #include "io.h"
 #include "proc.h"
-//#include <unistd.h>
 #define _GNU_SOURCE             // required for unshare
 #include <sched.h>
 #undef _GNU_SOURCE
 #include <sys/mount.h>
 #include <stdio.h>
+#include <string.h>
 
 static const char TYPE_TMPFS[] = "tmpfs";
 
 static int mount_type(const char *, char *, unsigned long, void *);
-static int mount_bind(char *, char *);
+static int mount_bind(char *, char *, bool);
+static int mount_user(char *, size_t, char *);
 
 int prepare_mounts(mount_t * mounts, pid_t * pid)
 {
@@ -33,15 +35,16 @@ int prepare_mounts(mount_t * mounts, pid_t * pid)
     }
 
     // TODO: check if it will be required multiple overlays
+    // skip /dev /proc /sys /run /tmp /var/tmp /boot
     if (mount_type(mounts->overlay_type, mounts->root, 0, mounts->overlay_opts)) {
         return -1;
     }
 
-    if (mount_bind(mounts->dev, mounts->root_dev)) {
+    if (mount_bind(mounts->dev, mounts->root_dev, false)) {
         return -1;
     }
 
-    if (mount_bind(mounts->dev_pts, mounts->root_dev_pts)) {
+    if (mount_bind(mounts->dev_pts, mounts->root_dev_pts, false)) {
         return -1;
     }
 
@@ -82,16 +85,24 @@ int prepare_mounts(mount_t * mounts, pid_t * pid)
         }
     }
 
-    if (mount_bind(mounts->resolv, mounts->root_resolv)) {
+    if (mount_bind(mounts->resolv, mounts->root_resolv, false)) {
         return -1;
     }
 
     // TODO: mount_bind (conditionally) /sys/fs/cgroup /sys/firmware/efi/efivars
 
-    //mkdir /run/lock /run/user
+    //mkdir /run/lock (1777) /run/user
     //mount_type tmpfs /run/shm or /dev/shm/
     //maybe mount /run/user/$id/pulse and wayland-0
-    //mount user volumes... mkdir if not exists...
+
+    if (mounts->volumes_count) {
+        size_t size = strlen(mounts->root);
+        for (int i = 0; i < mounts->volumes_count; i++) {
+            if (mount_user(mounts->root, size, mounts->volumes[i])) {
+                return -1;
+            }
+        }
+    }
     // TODO: create parent dir of user mounts if not-exists
     return 0;
 }
@@ -111,18 +122,91 @@ static int mount_type(const char *type, char *target, unsigned long flags, void 
     return 0;
 }
 
-static int mount_bind(char *host, char *target)
+static int mount_bind(char *host, char *target, bool rec)
 {
-    if (mount(host, target, NULL, MS_BIND, NULL)) {
+    int flags = MS_BIND;
+    if (rec) {
+        flags |= MS_REC;
+    }
+    if (mount(host, target, NULL, flags, NULL)) {
         fprintf(stderr, "Unable to mount bind %s.\n", host);
         return -1;
     }
 
-    // maybe MS_UNBINDABLE instead?
-    if (mount(NULL, target, NULL, MS_PRIVATE, NULL)) {
+    flags = MS_PRIVATE;
+    if (rec) {
+        flags |= MS_REC;
+    }
+    if (mount(NULL, target, NULL, flags, NULL)) {
         fprintf(stderr, "Unable to make bind %s private.\n", host);
         return -1;
     }
 
+    return 0;
+}
+
+static int mount_user(char *root, size_t root_size, char *volume)
+{
+    size_t size = strlen(volume);
+    char *sep = memchr(volume, ':', size);
+    size_t host_size = size;
+    size_t guest_size = 0;
+    char *guest = NULL;
+    if (sep) {
+        *sep = 0;
+        host_size = sep - volume;
+        guest = mem_path(root, root_size, sep + 1, size - host_size - 1, &guest_size);
+    } else {
+        guest = mem_path(root, root_size, volume, size, &guest_size);
+    }
+    if (!guest) {
+        return -1;
+    }
+    int ret = io_exists(volume);
+    if (ret == -1) {
+        return -1;
+    }
+    bool dir = true;
+    if (ret) {
+        if (io_mkdir(volume, host_size)) {
+            return -1;
+        }
+    } else {
+        ret = io_isdir(volume);
+        if (ret == -1) {
+            return -1;
+        }
+        dir = !ret;
+    }
+    // TODO: create guest copying ownership and mode of host (like a mirror)?
+    size_t dir_size = guest_size;
+    if (!dir) {
+        int i = dir_size - 1;
+        while (dir_size && guest[i] == '/') {
+            i--;
+        }
+        while (dir_size && guest[i] != '/') {
+            i--;
+        }
+        if (!i) {
+            fprintf(stderr, "Unable to find parent dir of %s.\n", guest);
+            return -1;
+        }
+        dir_size = i + 1;
+        guest[dir_size] = 0;
+    }
+    if (io_mkdir(guest, dir_size)) {
+        return -1;
+    }
+    if (!dir) {
+        guest[dir_size] = '/';
+        if (io_touch(guest)) {
+            return -1;
+        }
+    }
+    if (mount_bind(volume, guest, true)) {
+        return -1;
+    }
+    free(guest);
     return 0;
 }

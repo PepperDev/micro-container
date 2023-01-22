@@ -7,6 +7,8 @@ int io_isoverlay2supported();
 
 int io_exists(char *);
 
+int io_isdir(char *);
+
 int io_islink(char *);
 
 int io_unlink(char *);

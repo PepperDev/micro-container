@@ -19,7 +19,8 @@ typedef struct {
     char *root_run;
     char *root_resolv;
     // shm
-    // user_volumes...
+    char **volumes;
+    size_t volumes_count;
 } mount_t;
 
 int prepare_mounts(mount_t *, pid_t *);

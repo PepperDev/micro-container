@@ -124,9 +124,10 @@ int spawn_cage(config_t * config)
         .root_tmp = CAGE_ROOT "/tmp",
         .root_var_tmp = CAGE_ROOT "/var/tmp",
         .root_run = CAGE_ROOT "/run",
-        .root_resolv = CAGE_ROOT "/etc/resolv.conf"
-            // TODO: shm
-            // TODO: user defined mounts
+        .root_resolv = CAGE_ROOT "/etc/resolv.conf",
+        // TODO: shm
+        .volumes = config->volumes,
+        .volumes_count = config->volumes_count,
     };
 
     int fd = create_pidfile(config->pidfile, pidfile_size);

@@ -45,6 +45,18 @@ int io_exists(char *file)
     return 0;
 }
 
+int io_isdir(char *dir)
+{
+    struct stat fst;
+    if (io_stat(dir, &fst)) {
+        return -1;
+    }
+    if (S_ISDIR(fst.st_mode)) {
+        return 0;
+    }
+    return 1;
+}
+
 int io_islink(char *file)
 {
     struct stat fst;
