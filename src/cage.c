@@ -157,8 +157,8 @@ int spawn_cage(config_t * config)
 
     user_t user;
     if (parse_user
-        (&user, CAGE_ROOT FILE_PASSWD, CAGE_ROOT FILE_GROUP, config->user, config->group, envs.user, envs.home,
-         envs.shell, config->initscript)) {
+        (&user, CAGE_ROOT FILE_PASSWD, CAGE_ROOT FILE_GROUP, config->user, config->group, !envs.user, !envs.home,
+         !envs.shell, config->initscript)) {
         return -1;
     }
     // TODO: compute gui mounts? - after mounts because guest XDG_RUNTIME_DIR should be based on guest user id, but before chroot to be possible to bind
@@ -207,13 +207,14 @@ static int spawn_existing(config_t * config, env_t * envs)
 
     user_t user;
     if (parse_user
-        (&user, FILE_PASSWD, FILE_GROUP, config->user, config->group, envs->user, envs->home, envs->shell, false)) {
+        (&user, FILE_PASSWD, FILE_GROUP, config->user, config->group, !envs->user, !envs->home, !envs->shell, false)) {
         return -1;
     }
 
     return launch_cage(envs, &user);
 }
 
+// TODO: receive dir, command, initscript
 static int launch_cage(env_t * envs, user_t * users)
 {
     char *home = envs->home;

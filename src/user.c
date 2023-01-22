@@ -181,7 +181,7 @@ int parse_user(user_t * data, char *file_passwd, char *file_group, char *user, c
                 scan_root = false;
             }
             if (scan_user && ((found_uid && record->pw_uid == data->uid)
-                              || (!found_uid && !memcmp(data->name, record->pw_name, data->name_size)))) {
+                              || (!found_uid && !memcmp(data->name, record->pw_name, data->name_size + 1)))) {
                 if (!found_uid) {
                     data->uid = record->pw_uid;
                 }
@@ -290,7 +290,7 @@ static int fill_user(struct passwd *record, char **name, size_t *name_size, char
     if (shell) {
         *shell_size = strlen(record->pw_shell);
         *shell = mem_allocate(*shell_size + 1);
-        if (!*name) {
+        if (!*shell) {
             return -1;
         }
         memcpy(*shell, record->pw_shell, *shell_size + 1);
