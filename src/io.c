@@ -1,10 +1,12 @@
 #include "io.h"
 #include <sys/utsname.h>
 #include <sys/stat.h>
+#include <sys/ioctl.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <linux/loop.h>
 
 #define SECTOR_HEADER 4096
 
@@ -155,6 +157,55 @@ int io_samefs(char *source, char *target)
         return 0;
     }
     return 1;
+}
+
+int io_loop(char *dev, char *file)
+{
+    int fd = io_open("/dev/loop-control", O_RDWR | O_CLOEXEC, 0);
+    if (fd == -1) {
+        return -1;
+    }
+    int id = ioctl(fd, LOOP_CTL_GET_FREE);
+    if (id == -1) {
+        fprintf(stderr, "Unable to quey free loop.\n");
+        return -1;
+    }
+    if (io_close(fd)) {
+        return -1;
+    }
+    if (sprintf(dev, "/dev/loop%u", id) == -1) {
+        fprintf(stderr, "Unable to parse loop.\n");
+        return -1;
+    }
+    fd = io_open(file, O_RDWR, 0);
+    if (fd == -1) {
+        return -1;
+    }
+    int lfd = io_open(dev, O_RDWR, 0);
+    if (lfd == -1) {
+        return -1;
+    }
+    if (ioctl(lfd, LOOP_SET_FD, fd)) {
+        fprintf(stderr, "Unable to set loop fd.\n");
+        return -1;
+    }
+    struct loop_info info;
+    if (ioctl(lfd, LOOP_GET_STATUS, &info)) {
+        fprintf(stderr, "Unable query loop status.\n");
+        return -1;
+    }
+    info.lo_flags |= LO_FLAGS_AUTOCLEAR;
+    if (ioctl(lfd, LOOP_SET_STATUS, &info)) {
+        fprintf(stderr, "Unable update loop status.\n");
+        return -1;
+    }
+    if (io_close(lfd)) {
+        return -1;
+    }
+    if (io_close(fd)) {
+        return -1;
+    }
+    return 0;
 }
 
 static int io_open(char *file, int flags, int mode)

@@ -164,8 +164,12 @@ int overlay_filesystem(char *upper_dir, size_t upper_size, char *lower_dir, size
         }
     }
 
-    // losetup?
-    if (mount(img, upper_dir, NULL, 0, NULL)) {
+    char loop[64];
+    if (io_loop(loop, img)) {
+        return -1;
+    }
+
+    if (mount(loop, upper_dir, "ext4", 0, NULL)) {
         fprintf(stderr, "Unable to mount image %s.\n", img);
         return -1;
     }

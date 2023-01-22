@@ -19,4 +19,6 @@ int io_blankfirststsector(char *);
 
 int io_samefs(char *, char *);
 
+int io_loop(char *, char *);
+
 #endif
