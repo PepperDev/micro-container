@@ -18,7 +18,7 @@
 #define FILE_GROUP "/etc/group"
 
 static int spawn_existing(config_t *, env_t *);
-static int launch_cage(env_t *, user_t *);
+static int launch_cage(env_t *, user_t *, char *, char *, char **, size_t);
 
 // compute_cage
 int spawn_cage(config_t * config)
@@ -167,7 +167,7 @@ int spawn_cage(config_t * config)
         return -1;
     }
 
-    return launch_cage(&envs, &user);
+    return launch_cage(&envs, &user, config->currentdir, config->initscript, config->command, config->command_count);
 }
 
 static int spawn_existing(config_t * config, env_t * envs)
@@ -203,19 +203,16 @@ static int spawn_existing(config_t * config, env_t * envs)
         return -1;
     }
 
-    config->initscript = NULL;
-
     user_t user;
     if (parse_user
         (&user, FILE_PASSWD, FILE_GROUP, config->user, config->group, !envs->user, !envs->home, !envs->shell, false)) {
         return -1;
     }
 
-    return launch_cage(envs, &user);
+    return launch_cage(envs, &user, config->currentdir, NULL, config->command, config->command_count);
 }
 
-// TODO: receive dir, command, initscript
-static int launch_cage(env_t * envs, user_t * users)
+static int launch_cage(env_t * envs, user_t * users, char *dir, char *init, char **args, size_t args_count)
 {
     char *home = envs->home;
     char *user = envs->user;
@@ -250,7 +247,16 @@ static int launch_cage(env_t * envs, user_t * users)
             }
         }
     }
-    // TODO: create currentdir if do not exists before launch after mount, user as owner!!!!
+
+    if (dir) {
+        int ret = io_exists(dir);
+        if (ret == -1) {
+            return -1;
+        }
+        if (ret && (io_mkdir(dir, strlen(dir)) || io_chown(dir, users->uid, users->gid))) {
+            return -1;
+        }
+    }
 
     size_t i = 0;
     char *user_envs[envs->envs_count + 7];
@@ -277,7 +283,7 @@ static int launch_cage(env_t * envs, user_t * users)
         .gid = users->gid,
         .groups_count = users->groups_count,
         .groups = users->groups,
-        .dir = NULL,
+        .dir = dir,
         .command = "/bin/sh",
         .args = (char *[]) {"-sh", NULL},
         .envs = user_envs,

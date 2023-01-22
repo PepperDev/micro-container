@@ -11,6 +11,8 @@ int io_unlink(char *);
 
 int io_mkdir(char *, size_t);
 
+int io_chown(char *, uid_t, gid_t);
+
 int io_touch(char *);
 
 int io_truncate(char *, off_t);

@@ -93,6 +93,15 @@ int io_mkdir(char *dir, size_t size)
     return 0;
 }
 
+int io_chown(char *file, uid_t uid, gid_t gid)
+{
+    if (chown(file, uid, gid)) {
+        fprintf(stderr, "Unable to change owner of %s\n", file);
+        return -1;
+    }
+    return 0;
+}
+
 int io_touch(char *file)
 {
     int fd = io_open(file, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
