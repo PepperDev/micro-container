@@ -19,6 +19,10 @@ int prepare_mounts(mount_t * mounts, pid_t * pid)
         fprintf(stderr, "Unable to unshare mount and pid.\n");
         return -1;
     }
+    if (mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL)) {
+        fprintf(stderr, "Unable to make parent private.\n");
+        return -1;
+    }
 
     *pid = pidfork();
     if (*pid == -1) {
