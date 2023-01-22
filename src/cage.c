@@ -96,7 +96,13 @@ int spawn_cage(config_t * config)
         if (io_mkdir(config->workdir, work_size)) {
             return -1;
         }
-        // TODO: warn if workdir and upperdir are in different filesystem but keep going...
+        ret = io_samefs(config->upperdir, config->workdir);
+        if (ret == -1) {
+            return -1;
+        }
+        if (ret) {
+            fprintf(stderr, "Warning: workdir and upperdir ar in different filesystems.\n");
+        }
     }
 
     char root[] = CAGE_ROOT;
