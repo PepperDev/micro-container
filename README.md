@@ -6,7 +6,7 @@ If you are tired of the huge footprint Docker deamon does on your system it is m
 ## Download
 Download the avaiable version at [releases](https://github.com/PepperDev/micro-container/releases) page.
 
-    $ wget -qO- https://github.com/PepperDev/micro-container/releases/download/v0.3.0-rc2/cage.amd64 |
+    $ wget -qO- https://github.com/PepperDev/micro-container/releases/download/v0.3.0-rc3/cage.amd64 |
       sudo install -v -o 0 -g 0 -m 04755 /dev/stdin /usr/local/bin/cage
 
 ## Build
