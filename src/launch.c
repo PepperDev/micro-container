@@ -72,8 +72,8 @@ int launch(launch_t * launch)
 
 static int launch_exec(exec_t * launch)
 {
-    if (setreuid(launch->uid, launch->uid)) {
-        fprintf(stderr, "Unable to change user.\n");
+    if (launch->dir && chdir(launch->dir)) {
+        fprintf(stderr, "Unable to change directory to %s.\n", launch->dir);
         return -1;
     }
     if (setregid(launch->gid, launch->gid)) {
@@ -84,8 +84,8 @@ static int launch_exec(exec_t * launch)
         fprintf(stderr, "Unable to change group list.\n");
         return -1;
     }
-    if (launch->dir && chdir(launch->dir)) {
-        fprintf(stderr, "Unable to change directory to %s.\n", launch->dir);
+    if (setreuid(launch->uid, launch->uid)) {
+        fprintf(stderr, "Unable to change user.\n");
         return -1;
     }
     execvpe(launch->command, launch->args, launch->envs);

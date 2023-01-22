@@ -41,13 +41,13 @@ int config_parse(config_t * config, int argc, char *argv[])
             || (ret = parse_arg_value(carg, 'U', &config->upperdir, next, &i))
             || (ret = parse_arg_value(carg, 'p', &config->pidfile, next, &i))
             || (ret = parse_arg_value(carg, 'u', &config->user, next, &i))
-            || (ret = parse_arg_value(carg, 'G', &config->group, next, &i))
+            || (ret = parse_arg_value(carg, 'g', &config->group, next, &i))
             || (ret = parse_arg_value(carg, 'c', &config->currentdir, next, &i))
             || (ret = parse_arg_value(carg, 'i', &config->initscript, next, &i))
             || (ret = parse_arg_list(carg, 'e', &config->envs, &config->envs_count, next, &i))
             || (ret = parse_arg_list(carg, 'v', &config->volumes, &config->volumes_count, next, &i))
             || (ret = parse_arg_flag(carg, 'k', &config->stop))
-            || (ret = parse_arg_flag(carg, 'g', &config->gui))
+            || (ret = parse_arg_flag(carg, 'G', &config->gui))
             ) {
             if (ret == -1) {
                 return -1;
