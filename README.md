@@ -63,6 +63,27 @@ If you want an unprivileged Alpine system you can do instead:
     # Then simply:
     cage -l "$rootdir" -u 1000 -g 1000 -n alpine
 
+If you want a gui capable user:
+
+    cage -G -u "$(id -u)" -g "$(id -g):$(id -G | tr ' ' ':')"
+
+If you want an unprivileged Alpine system with dynamic user creation you can do instead:
+
+    rootdir=/var/lib/microcontainer/root-alpine
+    if [ ! -d "$rootdir" ]; then
+      sudo mkdir -p "$rootdir"
+      wget -qO- \
+        'https://dl-cdn.alpinelinux.org/alpine/v3.17/releases/x86_64/alpine-minirootfs-3.17.1-x86_64.tar.gz' |
+        sudo tar -xzf- -C "$rootdir"
+    fi
+    # Then simply:
+    cage -l "$rootdir" -i /proc/self/fd/3 -u "$(id -u)" -g "$(id -g)" 3<<EOF
+    apk add --no-cache sudo
+    addgroup -g $(id -g) user
+    adduser -D -G user -u $(id -u) -s /bin/ash -h /home/user user
+    printf 'user ALL=(ALL:ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/nopass
+    EOF
+
 ## Usage
     cage [options...] [--] [command...]
 

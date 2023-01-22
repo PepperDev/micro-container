@@ -353,6 +353,7 @@ static int launch_cage(env_t * envs, user_t * users, char *dir, char *init, char
         instance.init_args[1] = init;
         instance.init_args[2] = NULL;
         instance.init = instance.init_args[0];
+        // TODO: maybe re-read passwd and groups after running initscript, since it can setup users...
     }
 
     if (args && args_count) {
