@@ -4,11 +4,22 @@
 #include <stdio.h>
 #include <string.h>
 
+#define ENV_PATH "PATH"
+#define ENV_PATH_SIZE 4
 #define ENV_TERM "TERM"
 #define ENV_TERM_SIZE 4
 #define ENV_LANG "LANG"
 #define ENV_LANG_SIZE 4
+#define ENV_HOME "HOME"
+#define ENV_HOME_SIZE 4
+#define ENV_SHELL "SHELL"
+#define ENV_SHELL_SIZE 5
+#define ENV_USER "USER"
+#define ENV_USER_SIZE 4
+#define ENV_XDG "XDG_RUNTIME_DIR"
+#define ENV_XDG_SIZE 15
 
+static bool read_env(char *, char *, size_t, char **);
 static char *env_default(char *, size_t, char *);
 
 int parse_envs(env_t * env, char **envs, size_t envs_count, bool gui)
@@ -23,11 +34,30 @@ int parse_envs(env_t * env, char **envs, size_t envs_count, bool gui)
             fprintf(stderr, "Invalid input environment %s\n", envs[i]);
             return -1;
         }
-        // if (memcmp())
-        // if not match copy and increment env->envs_count
-        // replace existing if not unique...
+        if (read_env(envs[i], ENV_PATH, ENV_PATH_SIZE, &env->path)) {
+            continue;
+        }
+        if (read_env(envs[i], ENV_TERM, ENV_TERM_SIZE, &env->term)) {
+            continue;
+        }
+        if (read_env(envs[i], ENV_LANG, ENV_LANG_SIZE, &env->lang)) {
+            continue;
+        }
+        if (read_env(envs[i], ENV_HOME, ENV_HOME_SIZE, &env->home)) {
+            continue;
+        }
+        if (read_env(envs[i], ENV_SHELL, ENV_SHELL_SIZE, &env->shell)) {
+            continue;
+        }
+        if (read_env(envs[i], ENV_USER, ENV_USER_SIZE, &env->user)) {
+            continue;
+        }
+        if (read_env(envs[i], ENV_XDG, ENV_XDG_SIZE, &env->xdg_runtime_dir)) {
+            continue;
+        }
+        // TODO: replace existing if not unique...
+        env->envs[env->envs_count++] = envs[i];
     }
-    // check if user defined envs replaces term, lang, path, home, shell and user
     if (!env->path) {
         env->path = "/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin";
     }
@@ -38,14 +68,23 @@ int parse_envs(env_t * env, char **envs, size_t envs_count, bool gui)
         env->lang = env_default(ENV_LANG, ENV_LANG_SIZE + 1, ENV_LANG "=C");
     }
     if (gui && !env->xdg_runtime_dir) {
-        char *val = getenv("XDG_RUNTIME_DIR");
+        char *val = getenv(ENV_XDG);
         if (val) {
-            env->xdg_runtime_dir = val - 16;
+            env->xdg_runtime_dir = val - ENV_XDG_SIZE - 1;
         } else {
-            // TODO: obtain caller from real uid or SUDO_USER or parent process
+            // TODO: obtain caller from real uid or SUDO_UID or parent process
         }
     }
     return 0;
+}
+
+static bool read_env(char *env, char *key, size_t size, char **value)
+{
+    if (memcmp(env, key, size) || env[size] != '=') {
+        return false;
+    }
+    *value = env;
+    return true;
 }
 
 static char *env_default(char *key, size_t size, char *def)

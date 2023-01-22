@@ -151,6 +151,7 @@ int parse_user(user_t * data, char *file_passwd, char *file_group, char *user, c
         if (!data->groups) {
             return -1;
         }
+        // TODO: remove duplicates?
         for (int i = 0; i < groups_count; i++) {
             data->groups[i] = groups[i].gid;
         }
