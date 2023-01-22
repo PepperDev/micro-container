@@ -69,11 +69,17 @@ int prepare_mounts(mount_t * mounts, pid_t * pid)
     if (ret == -1) {
         return -1;
     }
-
-    // TODO: what if it's a link?
-
-    if (ret && io_touch(mounts->root_resolv)) {
-        return -1;
+    if (ret) {
+        ret = io_islink(mounts->root_resolv);
+        if (ret == -1) {
+            return -1;
+        }
+        if (!ret && io_unlink(mounts->root_resolv)) {
+            return -1;
+        }
+        if (io_touch(mounts->root_resolv)) {
+            return -1;
+        }
     }
 
     if (mount_bind(mounts->resolv, mounts->root_resolv)) {

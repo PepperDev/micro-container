@@ -45,6 +45,19 @@ int io_exists(char *file)
     return 0;
 }
 
+int io_islink(char *file)
+{
+    struct stat fst;
+    if (lstat(file, &fst)) {
+        fprintf(stderr, "Unable to stat link %s.\n", file);
+        return -1;
+    }
+    if (S_ISLNK(fst.st_mode)) {
+        return 0;
+    }
+    return 1;
+}
+
 int io_unlink(char *file)
 {
     if (unlink(file)) {
@@ -62,8 +75,7 @@ int io_mkdir(char *dir, size_t size)
     }
     if (!ret) {
         struct stat fst;
-        if (stat(dir, &fst)) {
-            fprintf(stderr, "Unable to get stat of file %s\n", dir);
+        if (io_stat(dir, &fst)) {
             return -1;
         }
         if (!S_ISDIR(fst.st_mode)) {
