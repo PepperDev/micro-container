@@ -66,6 +66,8 @@ int prepare_mounts(mount_t * mounts, pid_t * pid)
         return -1;
     }
 
+    // TODO: what if it's a link?
+
     if (ret && io_touch(mounts->root_resolv)) {
         return -1;
     }
