@@ -192,7 +192,7 @@ static int mount_user(char *root, size_t root_size, char *volume)
             fprintf(stderr, "Unable to find parent dir of %s.\n", guest);
             return -1;
         }
-        dir_size = i + 1;
+        dir_size = i;
         guest[dir_size] = 0;
     }
     if (io_mkdir(guest, dir_size)) {
