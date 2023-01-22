@@ -226,7 +226,14 @@ static int launch_cage(env_t * envs, user_t * users, char *dir, char *init, char
             }
         } else {
             home = "HOME=/tmp/.home";
-            // TODO: create /tmp/.home with uid as owner and gid as group
+            char homedir[] = "/tmp/.home";
+            int ret = io_exists(homedir);
+            if (ret == -1) {
+                return -1;
+            }
+            if (ret && (io_mkdir(homedir, sizeof(homedir)) || io_chown(homedir, users->uid, users->gid))) {
+                return -1;
+            }
         }
     }
     if (!shell) {
@@ -264,10 +271,10 @@ static int launch_cage(env_t * envs, user_t * users, char *dir, char *init, char
     user_envs[i++] = envs->term;
     user_envs[i++] = envs->lang;
     user_envs[i++] = home;
-    user_envs[i++] = shell;
     if (user) {
         user_envs[i++] = user;
     }
+    user_envs[i++] = shell;
     if (envs->envs_count) {
         memcpy(user_envs + i, envs->envs, envs->envs_count * sizeof(char *));
         i += envs->envs_count;
@@ -284,10 +291,99 @@ static int launch_cage(env_t * envs, user_t * users, char *dir, char *init, char
         .groups_count = users->groups_count,
         .groups = users->groups,
         .dir = dir,
-        .command = "/bin/sh",
-        .args = (char *[]) {"-sh", NULL},
         .envs = user_envs,
     };
+
+    if (init) {
+        instance.init_envs = mem_allocate(sizeof(char *) * (envs->envs_count + 7));
+        if (!instance.init_envs) {
+            return -1;
+        }
+        char *root_home = envs->home;
+        char *root_user = envs->user;
+        char *root_shell = envs->shell;
+        if (!root_home) {
+            if (users->root_home) {
+                root_home = mem_append("HOME=", 5, users->root_home, users->root_home_size + 1, NULL, 0);
+                if (!root_home) {
+                    return -1;
+                }
+            } else {
+                root_home = "HOME=/root";
+            }
+        }
+        if (!root_shell) {
+            if (users->root_shell) {
+                root_shell = mem_append("SHELL=", 6, users->root_shell, users->root_shell_size + 1, NULL, 0);
+                if (!root_shell) {
+                    return -1;
+                }
+            } else {
+                root_shell = "SHELL=/bin/sh";
+            }
+        }
+        if (!root_user) {
+            if (users->root_name) {
+                root_user = mem_append("USER=", 5, users->root_name, users->root_name_size + 1, NULL, 0);
+                if (!root_user) {
+                    return -1;
+                }
+            } else {
+                root_user = "USER=root";
+            }
+        }
+        i = 0;
+        instance.init_envs[i++] = envs->path;
+        instance.init_envs[i++] = envs->term;
+        instance.init_envs[i++] = envs->lang;
+        instance.init_envs[i++] = root_home;
+        instance.init_envs[i++] = root_user;
+        instance.init_envs[i++] = root_shell;
+        if (envs->envs_count) {
+            memcpy(instance.init_envs + i, envs->envs, envs->envs_count * sizeof(char *));
+            i += envs->envs_count;
+        }
+        instance.init_envs[i] = NULL;
+
+        instance.init_args = mem_allocate(sizeof(char *) * 3);
+        if (!instance.init_args) {
+            return -1;
+        }
+        instance.init_args[0] = root_shell + 6;
+        instance.init_args[1] = init;
+        instance.init_args[2] = NULL;
+        instance.init = instance.init_args[0];
+    }
+
+    if (args && args_count) {
+        instance.args = mem_allocate(sizeof(char *) * (args_count + 1));
+        if (!instance.args) {
+            return -1;
+        }
+        memcpy(instance.args, args, args_count * sizeof(char *));
+        instance.args[args_count] = NULL;
+        instance.command = args[0];
+    } else {
+        instance.args = mem_allocate(sizeof(char *) * 2);
+        if (!instance.args) {
+            return -1;
+        }
+        instance.command = shell + 6;
+        size_t shell_size = strlen(instance.command);
+        size_t i = shell_size;
+        while (i && instance.command[i - 1] != '/') {
+            i--;
+        }
+        char *cmd = mem_allocate(shell_size - i + 2);
+        if (!cmd) {
+            return -1;
+        }
+        cmd[0] = '-';
+        memcpy(cmd + 1, instance.command + i, shell_size - i + 1);
+        instance.args[0] = cmd;
+        instance.args[1] = NULL;
+    }
+
     if (launch(&instance)) {
         return -1;
     }
