@@ -92,7 +92,11 @@ int killpid(char *name, char *pidfile)
         }
     }
 
-    if (io_unlink(pidfile)) {
+    ret = io_exists(pidfile);
+    if (ret == -1) {
+        return -1;
+    }
+    if (!ret && io_unlink(pidfile)) {
         return -1;
     }
 
