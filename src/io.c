@@ -61,6 +61,9 @@ int io_islink(char *file)
 {
     struct stat fst;
     if (lstat(file, &fst)) {
+        if (errno == ENOENT) {
+            return 2;
+        }
         fprintf(stderr, "Unable to stat link %s.\n", file);
         return -1;
     }
