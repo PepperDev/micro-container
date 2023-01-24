@@ -125,10 +125,23 @@ int spawn_cage(config_t * config)
         .root_var_tmp = CAGE_ROOT "/var/tmp",
         .root_run = CAGE_ROOT "/run",
         .root_resolv = CAGE_ROOT "/etc/resolv.conf",
-        // TODO: shm
+        .root_run_lock = CAGE_ROOT "/run/lock",
+        .root_run_user = CAGE_ROOT "/run/user",
+        .root_run_shm = CAGE_ROOT "/run/shm",
+        .root_dev_shm = CAGE_ROOT "/dev/shm",
+        .ln_shm = NULL,
+        // TODO: cgroups
         .volumes = config->volumes,
         .volumes_count = config->volumes_count,
     };
+
+    ret = io_islink("/dev/shm");
+    if (ret == -1) {
+        return -1;
+    }
+    if (!ret) {
+        mounts.ln_shm = "/dev/shm";
+    }
 
     int fd = create_pidfile(config->pidfile, pidfile_size);
     if (fd == -1) {

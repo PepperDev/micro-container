@@ -88,6 +88,7 @@ static int launch_exec(exec_t * launch)
         fprintf(stderr, "Unable to change user.\n");
         return -1;
     }
+    // TODO: umask 002?
     execvpe(launch->command, launch->args, launch->envs);
     fprintf(stderr, "Unable to launch command.\n");
     return -1;

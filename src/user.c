@@ -46,6 +46,7 @@ int check_superuser(int argc, char *argv[])
                 return -1;
             }
         }
+        // TODO: umask 0?
         return 0;
     }
 

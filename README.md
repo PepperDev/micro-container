@@ -24,7 +24,7 @@ To run a container based on your own host system:
 
 To run an Alpine based system:
 
-    rootdir=/var/lib/microcontainer/root-alpine
+    rootdir=/var/lib/microcontainer-root/alpine
     if [ ! -d "$rootdir" ]; then
       sudo mkdir -p "$rootdir"
       wget -qO- \
@@ -38,7 +38,7 @@ To run an Alpine based system:
 
 If you want an unprivileged Alpine system you can do instead:
 
-    rootdir=/var/lib/microcontainer/root-alpine
+    rootdir=/var/lib/microcontainer-root/alpine
     if [ ! -d "$rootdir" ]; then
       tmp="$(mktemp -d)"
       mkdir "$tmpdir/none" "$tmpdir/root"
@@ -72,7 +72,7 @@ If you want a gui capable user:
 
 If you want an unprivileged Alpine system with dynamic user creation you can do instead:
 
-    rootdir=/var/lib/microcontainer/root-alpine
+    rootdir=/var/lib/microcontainer-root/alpine
     if [ ! -d "$rootdir" ]; then
       sudo mkdir -p "$rootdir"
       wget -qO- \
@@ -81,10 +81,12 @@ If you want an unprivileged Alpine system with dynamic user creation you can do 
     fi
     # Then simply:
     cage -l "$rootdir" -i /proc/self/fd/3 -u "$(id -u)" -g "$(id -g)" 3<<EOF
-    apk add --no-cache sudo
-    addgroup -g $(id -g) user
-    adduser -D -G user -u $(id -u) -s /bin/ash -h /home/user user
-    printf 'user ALL=(ALL:ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/nopass
+    if [ ! -f /usr/bin/sudo ]; then
+      apk add --no-cache sudo
+      addgroup -g $(id -g) user
+      adduser -D -G user -u $(id -u) -s /bin/ash -h /home/user user
+      printf 'user ALL=(ALL:ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/nopass
+    fi
     EOF
 
 ## Usage

@@ -68,32 +68,49 @@ int prepare_mounts(mount_t * mounts, pid_t * pid)
         return -1;
     }
 
-    int ret = io_exists(mounts->root_resolv);
+    int ret = io_islink(mounts->root_resolv);
     if (ret == -1) {
         return -1;
     }
     if (ret) {
-        ret = io_islink(mounts->root_resolv);
+        ret = io_exists(mounts->root_resolv);
         if (ret == -1) {
             return -1;
         }
-        if (!ret && io_unlink(mounts->root_resolv)) {
-            return -1;
-        }
-        if (io_touch(mounts->root_resolv)) {
-            return -1;
-        }
+        ret = !ret;
+    } else if (io_unlink(mounts->root_resolv)) {
+        return -1;
+    }
+    if (!ret && io_touch(mounts->root_resolv)) {
+        return -1;
     }
 
     if (mount_bind(mounts->resolv, mounts->root_resolv, false)) {
         return -1;
     }
 
+    if (io_mktmpdir(mounts->root_run_lock, true)) {
+        return -1;
+    }
+
+    if (io_mktmpdir(mounts->root_run_user, false)) {
+        return -1;
+    }
+
+    if (mounts->ln_shm) {
+        if (io_createlink(mounts->ln_shm, mounts->root_run_shm)) {
+            return -1;
+        }
+        if (mount_type(TYPE_TMPFS, mounts->root_dev_shm, MS_NOSUID | MS_NODEV, NULL)) {
+            return -1;
+        }
+    } else if (io_mktmpdir(mounts->root_run_shm, true)) {
+        return -1;
+    }
+
     // TODO: mount_bind (conditionally) /sys/fs/cgroup /sys/firmware/efi/efivars
 
-    //mkdir /run/lock (1777) /run/user
-    //mount_type tmpfs /run/shm or /dev/shm/
-    //maybe mount /run/user/$id/pulse and wayland-0
+    // TODO: ? maybe mount /run/user/$id/pulse and wayland-0
 
     if (mounts->volumes_count) {
         size_t size = strlen(mounts->root);

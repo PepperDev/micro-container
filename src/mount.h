@@ -18,7 +18,12 @@ typedef struct {
     char *root_var_tmp;
     char *root_run;
     char *root_resolv;
-    // shm
+    char *root_run_lock;
+    char *root_run_user;
+    char *root_run_shm;
+    char *root_dev_shm;
+    char *ln_shm;
+    // TODO: cgroups
     char **volumes;
     size_t volumes_count;
 } mount_t;
