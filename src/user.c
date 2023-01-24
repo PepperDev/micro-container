@@ -1,5 +1,6 @@
 #include "user.h"
 #include "mem.h"
+#include "io.h"
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdio.h>
@@ -46,7 +47,7 @@ int check_superuser(int argc, char *argv[])
                 return -1;
             }
         }
-        // TODO: umask 0?
+        io_umask(0);
         return 0;
     }
 

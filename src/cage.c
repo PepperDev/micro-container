@@ -135,12 +135,13 @@ int spawn_cage(config_t * config)
         .volumes_count = config->volumes_count,
     };
 
-    ret = io_islink("/dev/shm");
+    char dev_shm[] = "/dev/shm";
+    ret = io_islink(dev_shm);
     if (ret == -1) {
         return -1;
     }
-    if (!ret) {
-        mounts.ln_shm = "/dev/shm";
+    if (ret) {
+        mounts.ln_shm = dev_shm;
     }
 
     int fd = create_pidfile(config->pidfile, pidfile_size);

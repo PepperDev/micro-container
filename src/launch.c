@@ -1,5 +1,6 @@
 #include "launch.h"
 #include "proc.h"
+#include "io.h"
 #define _GNU_SOURCE             // required for vfork, setreuid, setregid, setgroups, execvpe
 #include <unistd.h>
 #undef _GNU_SOURCE
@@ -9,6 +10,7 @@
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <fcntl.h>
 
 typedef struct {
     uid_t uid;
@@ -88,7 +90,7 @@ static int launch_exec(exec_t * launch)
         fprintf(stderr, "Unable to change user.\n");
         return -1;
     }
-    // TODO: umask 002?
+    io_umask(S_IWOTH);
     execvpe(launch->command, launch->args, launch->envs);
     fprintf(stderr, "Unable to launch command.\n");
     return -1;

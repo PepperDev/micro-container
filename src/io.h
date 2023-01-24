@@ -6,6 +6,8 @@
 
 int io_isoverlay2supported();
 
+void io_umask(mode_t);
+
 int io_exists(char *);
 
 int io_isdir(char *);

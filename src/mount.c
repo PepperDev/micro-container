@@ -97,6 +97,7 @@ int prepare_mounts(mount_t * mounts, pid_t * pid)
         return -1;
     }
 
+    printf("ln shm: %s\n", mounts->ln_shm);
     if (mounts->ln_shm) {
         if (io_createlink(mounts->ln_shm, mounts->root_run_shm)) {
             return -1;

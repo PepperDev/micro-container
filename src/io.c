@@ -33,6 +33,11 @@ int io_isoverlay2supported()
     return 1;
 }
 
+void io_umask(mode_t mask)
+{
+    umask(mask);
+}
+
 int io_exists(char *file)
 {
     int ret = access(file, F_OK);
