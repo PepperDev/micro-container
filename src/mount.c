@@ -9,11 +9,14 @@
 #include <stdio.h>
 #include <string.h>
 
-static const char TYPE_TMPFS[] = "tmpfs";
+static char TYPE_TMPFS[] = "tmpfs";
+static char TYPE_CGROUP[] = "cgroup";
 
-static int mount_type(const char *, char *, unsigned long, void *);
+static int mount_type(char *, char *, unsigned long, void *);
+static int mount_type_special(char *, char *, char *, unsigned long, void *);
 static int mount_bind(char *, char *, bool);
 static int mount_user(char *, size_t, char *);
+static int mount_cgroup(char *, size_t, char *);
 
 int prepare_mounts(mount_t * mounts, pid_t * pid)
 {
@@ -108,27 +111,41 @@ int prepare_mounts(mount_t * mounts, pid_t * pid)
         return -1;
     }
 
-    // TODO: mount_bind (conditionally) /sys/fs/cgroup
+    size_t size = strlen(mounts->root); // TODO: imrprove it
+    if (mounts->root_cgroup) {
+        if (mount_type_special
+            (TYPE_CGROUP, mounts->root_cgroup, TYPE_TMPFS, MS_NOSUID | MS_NODEV | MS_NOEXEC, "uid=0,gid=0,mode=0755")) {
+            return -1;
+        }
+        for (size_t i = 0; i > mounts->cgroups_count; i++) {
+            if (mount_cgroup(mounts->root, size, mounts->cgroups[i])) {
+                return -1;
+            }
+        }
+    }
 
     // user should use volumes to bind /sys/firmware/efi/efivars
 
     // TODO: ? maybe mount /run/user/$id/pulse and wayland-0
 
     if (mounts->volumes_count) {
-        size_t size = strlen(mounts->root);
-        for (int i = 0; i < mounts->volumes_count; i++) {
+        for (size_t i = 0; i < mounts->volumes_count; i++) {
             if (mount_user(mounts->root, size, mounts->volumes[i])) {
                 return -1;
             }
         }
     }
-    // TODO: create parent dir of user mounts if not-exists
     return 0;
 }
 
-static int mount_type(const char *type, char *target, unsigned long flags, void *data)
+static int mount_type(char *type, char *target, unsigned long flags, void *data)
 {
-    if (mount(type, target, type, flags, data)) {
+    return mount_type_special(type, target, type, flags, data);
+}
+
+static int mount_type_special(char *source, char *target, char *type, unsigned long flags, void *data)
+{
+    if (mount(source, target, type, flags, data)) {
         fprintf(stderr, "Unable to mount %s at %s.\n", type, target);
         return -1;
     }
@@ -227,5 +244,10 @@ static int mount_user(char *root, size_t root_size, char *volume)
         return -1;
     }
     free(guest);
+    return 0;
+}
+
+static int mount_cgroup(char *root, size_t root_size, char *volume)
+{
     return 0;
 }

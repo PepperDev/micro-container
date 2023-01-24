@@ -131,7 +131,9 @@ int spawn_cage(config_t * config)
         .root_run_shm = CAGE_ROOT "/run/shm",
         .root_dev_shm = CAGE_ROOT "/dev/shm",
         .ln_shm = NULL,
-        // TODO: cgroups
+        .root_cgroup = NULL,
+        .cgroups = NULL,
+        .cgroups_count = 0,
         .volumes = config->volumes,
         .volumes_count = config->volumes_count,
     };
@@ -154,10 +156,10 @@ int spawn_cage(config_t * config)
         if (ret == -1) {
             return -1;
         }
-    }
-    if (!ret) {
-        //mounts.root_cgroup = CAGE_ROOT DIR_CGROUP;
-        // ...
+        if (!ret) {
+            mounts.root_cgroup = CAGE_ROOT DIR_CGROUP;
+            // canclulate cgroups....
+        }
     }
 
     int fd = create_pidfile(config->pidfile, pidfile_size);

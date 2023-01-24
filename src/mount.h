@@ -23,7 +23,9 @@ typedef struct {
     char *root_run_shm;
     char *root_dev_shm;
     char *ln_shm;
-    // TODO: cgroups
+    char *root_cgroup;
+    char **cgroups;
+    size_t cgroups_count;
     char **volumes;
     size_t volumes_count;
 } mount_t;
