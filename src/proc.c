@@ -123,7 +123,7 @@ char *compute_pidfile(char *name, size_t size, size_t *len)
 
 pid_t readpid(char *pidfile, int *fd)
 {
-    *fd = open(pidfile, O_RDONLY);
+    *fd = open(pidfile, O_RDONLY | O_CLOEXEC);
     if (*fd == -1) {
         fprintf(stderr, "Unable to open pidfile %s.\n", pidfile);
         return -1;

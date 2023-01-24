@@ -97,7 +97,6 @@ int prepare_mounts(mount_t * mounts, pid_t * pid)
         return -1;
     }
 
-    printf("ln shm: %s\n", mounts->ln_shm);
     if (mounts->ln_shm) {
         if (io_createlink(mounts->ln_shm, mounts->root_run_shm)) {
             return -1;
@@ -109,7 +108,9 @@ int prepare_mounts(mount_t * mounts, pid_t * pid)
         return -1;
     }
 
-    // TODO: mount_bind (conditionally) /sys/fs/cgroup /sys/firmware/efi/efivars
+    // TODO: mount_bind (conditionally) /sys/fs/cgroup
+
+    // user should use volumes to bind /sys/firmware/efi/efivars
 
     // TODO: ? maybe mount /run/user/$id/pulse and wayland-0
 

@@ -16,6 +16,7 @@
 #define CAGE_ROOT_SIZE 14
 #define FILE_PASSWD "/etc/passwd"
 #define FILE_GROUP "/etc/group"
+#define DIR_CGROUP "/sys/fs/cgroup"
 
 static int spawn_existing(config_t *, env_t *);
 static int launch_cage(env_t *, user_t *, char *, char *, char **, size_t);
@@ -142,6 +143,21 @@ int spawn_cage(config_t * config)
     }
     if (ret) {
         mounts.ln_shm = dev_shm;
+    }
+
+    ret = io_exists("/proc/cgroups");
+    if (ret == -1) {
+        return -1;
+    }
+    if (!ret) {
+        ret = io_exists(DIR_CGROUP);
+        if (ret == -1) {
+            return -1;
+        }
+    }
+    if (!ret) {
+        //mounts.root_cgroup = CAGE_ROOT DIR_CGROUP;
+        // ...
     }
 
     int fd = create_pidfile(config->pidfile, pidfile_size);
