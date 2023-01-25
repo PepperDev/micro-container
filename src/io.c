@@ -1,4 +1,5 @@
 #include "io.h"
+#include "mem.h"
 #include <sys/utsname.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
@@ -159,7 +160,7 @@ int io_chown(char *file, uid_t uid, gid_t gid)
 
 int io_touch(char *file)
 {
-    int fd = io_open(file, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+    int fd = io_open(file, O_WRONLY | O_CREAT | O_CLOEXEC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
     if (fd == -1) {
         return -1;
     }
@@ -171,7 +172,7 @@ int io_touch(char *file)
 
 int io_truncate(char *file, off_t size)
 {
-    int fd = io_open(file, O_WRONLY | O_NONBLOCK | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+    int fd = io_open(file, O_WRONLY | O_NONBLOCK | O_CREAT | O_CLOEXEC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
     if (fd == -1) {
         return -1;
     }
@@ -187,7 +188,7 @@ int io_truncate(char *file, off_t size)
 
 int io_blankfirststsector(char *file)
 {
-    int fd = io_open(file, O_RDONLY, 0);
+    int fd = io_open(file, O_RDONLY | O_CLOEXEC, 0);
     if (fd == -1) {
         return -1;
     }
@@ -241,11 +242,11 @@ int io_loop(char *dev, char *file)
         fprintf(stderr, "Unable to parse loop.\n");
         return -1;
     }
-    fd = io_open(file, O_RDWR, 0);
+    fd = io_open(file, O_RDWR | O_CLOEXEC, 0);
     if (fd == -1) {
         return -1;
     }
-    int lfd = io_open(dev, O_RDWR, 0);
+    int lfd = io_open(dev, O_RDWR | O_CLOEXEC, 0);
     if (lfd == -1) {
         return -1;
     }
@@ -270,6 +271,39 @@ int io_loop(char *dev, char *file)
         return -1;
     }
     return 0;
+}
+
+char *io_readfile(char *file, size_t *size)
+{
+    int fd = io_open(file, O_RDONLY | O_CLOEXEC, 0);
+    if (fd == -1) {
+        return NULL;
+    }
+    buffer_t buf = buffer_new(SECTOR_HEADER);
+    if (!buf) {
+        return NULL;
+    }
+    *size = 0;
+    for (;;) {
+        char *data = buffer_grant(buf, SECTOR_HEADER);
+        if (!data) {
+            return NULL;
+        }
+        errno = 0;
+        ssize_t n = read(fd, data, SECTOR_HEADER);
+        if (n == -1) {
+            return NULL;
+        }
+        if (!n && errno == 0) {
+            break;
+        }
+        *size += n;
+        buffer_next(buf, n);
+    }
+    if (io_close(fd)) {
+        return NULL;
+    }
+    return buffer_use(buf);
 }
 
 static int io_mkdirm(char *dir, mode_t mode)

@@ -34,7 +34,7 @@ $(TARGET): $(OBJS) | bin
 	$(CC) $(CFLAGS) -c $< -o $@
 
 .objs/mem.o: src/mem.h
-.objs/io.o: src/io.h
+.objs/io.o: src/io.h src/mem.h
 .objs/config.o: src/config.h src/mem.h
 .objs/user.o: src/user.h src/mem.h src/io.h
 .objs/proc.o: src/proc.h src/mem.h src/io.h

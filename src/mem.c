@@ -88,6 +88,22 @@ buffer_t buffer_new(size_t capacity)
     return buf;
 }
 
+void *buffer_grant(buffer_t buf, size_t length)
+{
+    buffer_local *p = (buffer_local *) buf;
+    buffer_grow(p, length);
+    if (p->data) {
+        return ((char *)p->data) + p->length;
+    }
+    return NULL;
+}
+
+size_t buffer_next(buffer_t buf, size_t length)
+{
+    ((buffer_local *) buf)->length += length;
+    return length;
+}
+
 size_t buffer_write_data(buffer_t buf, size_t length, const void *data)
 {
     buffer_local *p = (buffer_local *) buf;

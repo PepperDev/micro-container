@@ -34,4 +34,6 @@ int io_samefs(char *, char *);
 
 int io_loop(char *, char *);
 
+char *io_readfile(char *, size_t *);
+
 #endif

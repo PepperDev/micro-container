@@ -9,6 +9,7 @@
 #include "root.h"
 #include "launch.h"
 #include <unistd.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 
@@ -158,7 +159,49 @@ int spawn_cage(config_t * config)
         }
         if (!ret) {
             mounts.root_cgroup = CAGE_ROOT DIR_CGROUP;
-            // canclulate cgroups....
+            size_t size = 0;
+            char *data = io_readfile("/proc/self/cgroup", &size);
+            if (!data) {
+                return -1;
+            }
+            char *pos = data;
+            size_t left = size;
+            while (left) {
+                char *next = pos;
+                while (*next != ':' && *next != '\n' && next - pos < left) {
+                    next++;
+                }
+                if (*next == ':') {
+                    next++;
+                    char *end = next;
+                    while (*end != ':' && *end != '\n' && end - pos < left) {
+                        end++;
+                    }
+                    if (end - next) {
+                        mounts.cgroups = mem_reallocate(mounts.cgroups, sizeof(char *) * (mounts.cgroups_count + 1));
+                        if (!mounts.cgroups) {
+                            return -1;
+                        }
+                        mounts.cgroups[mounts.cgroups_count] = mem_allocate(end - next + 1);
+                        if (!mounts.cgroups[mounts.cgroups_count]) {
+                            return -1;
+                        }
+                        memcpy(mounts.cgroups[mounts.cgroups_count], next, end - next);
+                        mounts.cgroups[mounts.cgroups_count][end - next] = 0;
+                        mounts.cgroups_count++;
+                        next = end;
+                    }
+                }
+                while (*next != '\n' && next - pos < left) {
+                    next++;
+                }
+                while (*next == '\n' && next - pos < left) {
+                    next++;
+                }
+                left -= next - pos;
+                pos = next;
+            }
+            free(data);
         }
     }
 
