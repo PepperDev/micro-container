@@ -59,7 +59,7 @@ int parse_envs(env_t * env, char **envs, size_t envs_count, bool gui)
         env->envs[env->envs_count++] = envs[i];
     }
     if (!env->path) {
-        env->path = "/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin";
+        env->path = "PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin";
     }
     if (!env->term) {
         env->term = env_default(ENV_TERM, ENV_TERM_SIZE + 1, ENV_TERM "=vt100");
