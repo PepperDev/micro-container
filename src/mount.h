@@ -32,4 +32,6 @@ typedef struct {
 
 int prepare_mounts(mount_t *, pid_t *);
 
+int mount_user_volume(char *, size_t, char *, size_t, char *, size_t);
+
 #endif

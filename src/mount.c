@@ -135,6 +135,62 @@ int prepare_mounts(mount_t * mounts, pid_t * pid)
     return 0;
 }
 
+int mount_user_volume(char *root, size_t root_size, char *host, size_t host_size, char *target, size_t target_size)
+{
+    size_t guest_size = 0;
+    char *guest = mem_path(root, root_size, target, target_size, &guest_size);
+    if (!guest) {
+        return -1;
+    }
+    int ret = io_exists(host);
+    if (ret == -1) {
+        return -1;
+    }
+    bool dir = true;
+    if (ret) {
+        if (io_mkdir(host, host_size)) {
+            return -1;
+        }
+    } else {
+        ret = io_isdir(host);
+        if (ret == -1) {
+            return -1;
+        }
+        dir = !ret;
+    }
+    // TODO: create guest copying ownership and mode of host (like a mirror)?
+    size_t dir_size = guest_size;
+    if (!dir) {
+        int i = dir_size - 1;
+        while (dir_size && guest[i] == '/') {
+            i--;
+        }
+        while (dir_size && guest[i] != '/') {
+            i--;
+        }
+        if (!i) {
+            fprintf(stderr, "Unable to find parent dir of %s.\n", guest);
+            return -1;
+        }
+        dir_size = i;
+        guest[dir_size] = 0;
+    }
+    if (io_mkdir(guest, dir_size)) {
+        return -1;
+    }
+    if (!dir) {
+        guest[dir_size] = '/';
+        if (io_touch(guest)) {
+            return -1;
+        }
+    }
+    if (mount_bind(host, guest, true)) {
+        return -1;
+    }
+    free(guest);
+    return 0;
+}
+
 static int mount_type(char *type, char *target, unsigned long flags, void *data)
 {
     if (mount(type, target, type, flags, data)) {
@@ -177,66 +233,11 @@ static int mount_user(char *root, size_t root_size, char *volume)
 {
     size_t size = strlen(volume);
     char *sep = memchr(volume, ':', size);
-    size_t host_size = size;
-    size_t guest_size = 0;
-    char *guest = NULL;
     if (sep) {
         *sep = 0;
-        host_size = sep - volume;
-        guest = mem_path(root, root_size, sep + 1, size - host_size - 1, &guest_size);
-    } else {
-        guest = mem_path(root, root_size, volume, size, &guest_size);
+        return mount_user_volume(root, root_size, volume, sep - volume, sep + 1, size - (sep + 1 - volume));
     }
-    if (!guest) {
-        return -1;
-    }
-    int ret = io_exists(volume);
-    if (ret == -1) {
-        return -1;
-    }
-    bool dir = true;
-    if (ret) {
-        if (io_mkdir(volume, host_size)) {
-            return -1;
-        }
-    } else {
-        ret = io_isdir(volume);
-        if (ret == -1) {
-            return -1;
-        }
-        dir = !ret;
-    }
-    // TODO: create guest copying ownership and mode of host (like a mirror)?
-    size_t dir_size = guest_size;
-    if (!dir) {
-        int i = dir_size - 1;
-        while (dir_size && guest[i] == '/') {
-            i--;
-        }
-        while (dir_size && guest[i] != '/') {
-            i--;
-        }
-        if (!i) {
-            fprintf(stderr, "Unable to find parent dir of %s.\n", guest);
-            return -1;
-        }
-        dir_size = i;
-        guest[dir_size] = 0;
-    }
-    if (io_mkdir(guest, dir_size)) {
-        return -1;
-    }
-    if (!dir) {
-        guest[dir_size] = '/';
-        if (io_touch(guest)) {
-            return -1;
-        }
-    }
-    if (mount_bind(volume, guest, true)) {
-        return -1;
-    }
-    free(guest);
-    return 0;
+    return mount_user_volume(root, root_size, volume, size, volume, size);
 }
 
 static int mount_cgroup(char *root, size_t root_size, char *volume)

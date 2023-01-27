@@ -12,9 +12,6 @@ typedef struct {
     char *shell;
     char *user;
     char *xdg_runtime_dir;
-    // maybe PULSE_SERVER=unix:$xdg/pulse/native
-    // maybe PULSE_COOKIE=$home/.config/pulse/cookie
-    // maybe XAUTHORITY=$home/.Xauthority
     char **envs;
     size_t envs_count;
 } env_t;

@@ -214,17 +214,16 @@ int spawn_cage(config_t * config)
             if (!mounts.volumes) {
                 return -1;
             }
-            mounts.volumes[mounts.volumes_count] = mem_append("/tmp/.X11-unix", 15, NULL, 0, NULL, 0);
-            if (!mounts.volumes[mounts.volumes_count]) {
+            char *copy = mem_append("/tmp/.X11-unix", 15, NULL, 0, NULL, 0);
+            if (!copy) {
                 return -1;
             }
-            mounts.volumes_count++;
+            mounts.volumes[mounts.volumes_count++] = copy;
             envs.envs = mem_reallocate(envs.envs, sizeof(char *) * (envs.envs_count + 1));
             if (!envs.envs) {
                 return -1;
             }
-            envs.envs[envs.envs_count] = "DISPLAY=:0.0";
-            envs.envs_count++;
+            envs.envs[envs.envs_count++] = "DISPLAY=:0.0";
             // TODO: do not replace if already exists
         }
     }
@@ -263,28 +262,91 @@ int spawn_cage(config_t * config)
     }
 
     if (config->gui) {
-        // TODO: ? maybe mount /run/user/$id/pulse and wayland-0
-        // TODO: compute gui mounts? - after mounts because guest XDG_RUNTIME_DIR should be based on guest user id, but before chroot to be possible to bind
-        // TODO: preserve XDG_CURRENT_DESKTOP
-        // if wayland
-        /*
-           envs->envs = mem_reallocate(envs->envs, sizeof(char*) * (envs->envs_count + 8));
-           if (!envs->envs) {
-           return -1;
-           }
-           envs->envs[envs->envs_count++] = "XDG_RUNTIME_DIR=/run/user/...";
-           envs->envs[envs->envs_count++] = "XDG_SESSION_TYPE=wayland";
-           envs->envs[envs->envs_count++] = "GDK_BACKEND=wayland";
-           envs->envs[envs->envs_count++] = "QT_QPA_PLATFORM=wayland-egl";
-           envs->envs[envs->envs_count++] = "SDL_VIDEODRIVER=wayland";
-           envs->envs[envs->envs_count++] = "CLUTTER_BACKEND=wayland";
-           envs->envs[envs->envs_count++] = "MOZ_ENABLE_WAYLAND=1";
-           envs->envs[envs->envs_count++] = "_JAVA_AWT_WM_NONREPARENTING=1";
-         */
-        // %runtime%/wayland-0
+        size_t host_size = strlen(envs.xdg_runtime_dir);        // TODO: improve it
+        size_t pulse_size;
+        char *pulse = mem_path(envs.xdg_runtime_dir, host_size, "pulse", 5, &pulse_size);
+        if (!pulse) {
+            return -1;
+        }
+        size_t wayland_size;
+        char *wayland = mem_path(envs.xdg_runtime_dir, host_size, "wayland-0", 9, &wayland_size);       // TODO: do not repeat wayland-0
+        if (!wayland) {
+            return -1;
+        }
+        ret = io_exists(pulse);
+        if (ret == -1) {
+            return -1;
+        }
+        bool have_pulse = !ret;
+        ret = io_exists(wayland);
+        if (ret == -1) {
+            return -1;
+        }
+        bool have_wayland = !ret;
+        size_t size;
+        char *user_xdg;
+        if (have_pulse || have_wayland) {
+            char buf[64];
+            if (snprintf(buf, 64, "%d", user.uid) != 1) {
+                fprintf(stderr, "Unable to parse user id.\n");
+                return -1;
+            }
+            user_xdg = mem_path("XDG_RUNTIME_DIR=/run/user", 25, buf, strlen(buf), &size);
+            if (!user_xdg) {
+                return -1;
+            }
+            envs.envs = mem_reallocate(envs.envs, sizeof(char *) * (envs.envs_count + 1));
+            if (!envs.envs) {
+                return -1;
+            }
+            envs.envs[envs.envs_count++] = user_xdg;
+            if (io_mkdir(user_xdg + 16, size - 16)) {
+                return -1;
+            }
+            if (io_chown(user_xdg + 16, user.uid, user.gid)) {
+                return -1;
+            }
+        }
+        size_t root_size = strlen(mounts.root); // TODO: improve it
 
-        // %runtime%/pulse
-        // %home%/.config/pulse/cookie
+        if (have_wayland) {
+            // TODO: preserve XDG_CURRENT_DESKTOP unless overwritten
+            envs.envs = mem_reallocate(envs.envs, sizeof(char *) * (envs.envs_count + 7));
+            if (!envs.envs) {
+                return -1;
+            }
+            envs.envs[envs.envs_count++] = "XDG_SESSION_TYPE=wayland";
+            envs.envs[envs.envs_count++] = "GDK_BACKEND=wayland";
+            envs.envs[envs.envs_count++] = "QT_QPA_PLATFORM=wayland-egl";
+            envs.envs[envs.envs_count++] = "SDL_VIDEODRIVER=wayland";
+            envs.envs[envs.envs_count++] = "CLUTTER_BACKEND=wayland";
+            envs.envs[envs.envs_count++] = "MOZ_ENABLE_WAYLAND=1";
+            envs.envs[envs.envs_count++] = "_JAVA_AWT_WM_NONREPARENTING=1";
+            // TODO: keep previous value if already set
+            size_t copy_size;
+            char *copy = mem_path(user_xdg + 16, size - 16, "wayland-0", 9, &copy_size);
+            if (!copy) {
+                return -1;
+            }
+            if (mount_user_volume(mounts.root, root_size, wayland, wayland_size, copy, copy_size)) {
+                return -1;
+            }
+            free(copy);
+        }
+        if (have_pulse) {
+            size_t copy_size;
+            char *copy = mem_path(user_xdg + 16, size - 16, "pulse", 5, &copy_size);
+            if (!copy) {
+                return -1;
+            }
+            if (mount_user_volume(mounts.root, root_size, pulse, pulse_size, copy, copy_size)) {
+                return -1;
+            }
+            free(copy);
+            // %runtime%/pulse
+            // %home%/.config/pulse/cookie
+            // %home%/.Xauthority
+        }
     }
 
     if (changeroot(mounts.root)) {
