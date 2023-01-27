@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define VERSION "0.3.1"
+#define VERSION "0.4.0-rc"
 
 static int parse_arg_print(char *, char, void (*)(char *), char *);
 
