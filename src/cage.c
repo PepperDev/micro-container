@@ -182,12 +182,11 @@ int spawn_cage(config_t * config)
                         if (!mounts.cgroups) {
                             return -1;
                         }
-                        mounts.cgroups[mounts.cgroups_count] = mem_allocate(end - next + 1);
+                        char zero = 0;
+                        mounts.cgroups[mounts.cgroups_count] = mem_append(next, end - next, &zero, 1, NULL, 0);
                         if (!mounts.cgroups[mounts.cgroups_count]) {
                             return -1;
                         }
-                        memcpy(mounts.cgroups[mounts.cgroups_count], next, end - next);
-                        mounts.cgroups[mounts.cgroups_count][end - next] = 0;
                         mounts.cgroups_count++;
                         next = end;
                     }
@@ -202,6 +201,31 @@ int spawn_cage(config_t * config)
                 pos = next;
             }
             free(data);
+        }
+    }
+
+    if (config->gui) {
+        ret = io_exists("/tmp/.X11-unix");
+        if (ret == -1) {
+            return -1;
+        }
+        if (!ret) {
+            mounts.volumes = mem_reallocate(mounts.volumes, sizeof(char *) * (mounts.volumes_count + 1));
+            if (!mounts.volumes) {
+                return -1;
+            }
+            mounts.volumes[mounts.volumes_count] = mem_append("/tmp/.X11-unix", 15, NULL, 0, NULL, 0);
+            if (!mounts.volumes[mounts.volumes_count]) {
+                return -1;
+            }
+            mounts.volumes_count++;
+            envs.envs = mem_reallocate(envs.envs, sizeof(char *) * (envs.envs_count + 1));
+            if (!envs.envs) {
+                return -1;
+            }
+            envs.envs[envs.envs_count] = "DISPLAY=:0.0";
+            envs.envs_count++;
+            // TODO: do not replace if already exists
         }
     }
 
@@ -237,7 +261,31 @@ int spawn_cage(config_t * config)
          !envs.shell, config->initscript)) {
         return -1;
     }
-    // TODO: compute gui mounts? - after mounts because guest XDG_RUNTIME_DIR should be based on guest user id, but before chroot to be possible to bind
+
+    if (config->gui) {
+        // TODO: ? maybe mount /run/user/$id/pulse and wayland-0
+        // TODO: compute gui mounts? - after mounts because guest XDG_RUNTIME_DIR should be based on guest user id, but before chroot to be possible to bind
+        // TODO: preserve XDG_CURRENT_DESKTOP
+        // if wayland
+        /*
+           envs->envs = mem_reallocate(envs->envs, sizeof(char*) * (envs->envs_count + 8));
+           if (!envs->envs) {
+           return -1;
+           }
+           envs->envs[envs->envs_count++] = "XDG_RUNTIME_DIR=/run/user/...";
+           envs->envs[envs->envs_count++] = "XDG_SESSION_TYPE=wayland";
+           envs->envs[envs->envs_count++] = "GDK_BACKEND=wayland";
+           envs->envs[envs->envs_count++] = "QT_QPA_PLATFORM=wayland-egl";
+           envs->envs[envs->envs_count++] = "SDL_VIDEODRIVER=wayland";
+           envs->envs[envs->envs_count++] = "CLUTTER_BACKEND=wayland";
+           envs->envs[envs->envs_count++] = "MOZ_ENABLE_WAYLAND=1";
+           envs->envs[envs->envs_count++] = "_JAVA_AWT_WM_NONREPARENTING=1";
+         */
+        // %runtime%/wayland-0
+
+        // %runtime%/pulse
+        // %home%/.config/pulse/cookie
+    }
 
     if (changeroot(mounts.root)) {
         return -1;

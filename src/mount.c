@@ -125,8 +125,6 @@ int prepare_mounts(mount_t * mounts, pid_t * pid)
 
     // user should use volumes to bind /sys/firmware/efi/efivars
 
-    // TODO: ? maybe mount /run/user/$id/pulse and wayland-0
-
     if (mounts->volumes_count) {
         for (size_t i = 0; i < mounts->volumes_count; i++) {
             if (mount_user(mounts->root, size, mounts->volumes[i])) {
