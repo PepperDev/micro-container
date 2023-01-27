@@ -262,14 +262,14 @@ int spawn_cage(config_t * config)
     }
 
     if (config->gui) {
-        size_t host_size = strlen(envs.xdg_runtime_dir);        // TODO: improve it
+        size_t host_size = strlen(envs.host_xdg_runtime_dir);   // TODO: improve it
         size_t pulse_size;
-        char *pulse = mem_path(envs.xdg_runtime_dir, host_size, "pulse", 5, &pulse_size);
+        char *pulse = mem_path(envs.host_xdg_runtime_dir, host_size, "pulse", 5, &pulse_size);
         if (!pulse) {
             return -1;
         }
         size_t wayland_size;
-        char *wayland = mem_path(envs.xdg_runtime_dir, host_size, "wayland-0", 9, &wayland_size);       // TODO: do not repeat wayland-0
+        char *wayland = mem_path(envs.host_xdg_runtime_dir, host_size, "wayland-0", 9, &wayland_size);  // TODO: do not repeat wayland-0
         if (!wayland) {
             return -1;
         }
@@ -285,9 +285,10 @@ int spawn_cage(config_t * config)
         bool have_wayland = !ret;
         size_t size;
         char *user_xdg;
+        size_t root_size = strlen(mounts.root); // TODO: improve it
         if (have_pulse || have_wayland) {
             char buf[64];
-            if (snprintf(buf, 64, "%d", user.uid) != 1) {
+            if (snprintf(buf, 64, "%d", user.uid) == -1) {
                 fprintf(stderr, "Unable to parse user id.\n");
                 return -1;
             }
@@ -300,14 +301,16 @@ int spawn_cage(config_t * config)
                 return -1;
             }
             envs.envs[envs.envs_count++] = user_xdg;
-            if (io_mkdir(user_xdg + 16, size - 16)) {
+            size_t copy_size;
+            char *copy = mem_path(mounts.root, root_size, user_xdg + 16, size - 16, &copy_size);
+            if (io_mkdir(copy, copy_size)) {
                 return -1;
             }
-            if (io_chown(user_xdg + 16, user.uid, user.gid)) {
+            if (io_chown(copy, user.uid, user.gid)) {
                 return -1;
             }
+            free(copy);
         }
-        size_t root_size = strlen(mounts.root); // TODO: improve it
 
         if (have_wayland) {
             // TODO: preserve XDG_CURRENT_DESKTOP unless overwritten
@@ -343,10 +346,70 @@ int spawn_cage(config_t * config)
                 return -1;
             }
             free(copy);
-            // %runtime%/pulse
-            // %home%/.config/pulse/cookie
-            // %home%/.Xauthority
+            copy = mem_path(envs.host_home, strlen(envs.host_home), ".config/pulse/cookie", 20, &copy_size);
+            ret = io_exists(copy);
+            if (ret == -1) {
+                return -1;
+            }
+            if (!ret) {
+                size_t target_size;
+                char *target = mem_path(mounts.root, root_size, user.home, strlen(user.home), &target_size);
+                if (!target) {
+                    return -1;
+                }
+                char *prev = target;
+                target = mem_path(target, target_size, ".config/pulse/cookie", 20, &target_size);
+                if (!target) {
+                    return -1;
+                }
+                free(prev);
+                target[target_size - 7] = 0;
+                ret = io_exists(target);
+                if (ret == -1) {
+                    return -1;
+                }
+                if (ret) {
+                    if (io_mkdir(target, target_size - 7)) {
+                        return -1;
+                    }
+                    if (io_chown(target, user.uid, user.gid)) {
+                        return -1;
+                    }
+                    target[target_size - 13] = 0;
+                    if (io_chown(target, user.uid, user.gid)) {
+                        return -1;
+                    }
+                    target[target_size - 21] = 0;
+                    if (io_chown(target, user.uid, user.gid)) {
+                        return -1;
+                    }
+                    target[target_size - 21] = '/';
+                    target[target_size - 13] = '/';
+                }
+                target[target_size - 7] = '/';
+                if (mount_user_volume
+                    (mounts.root, root_size, copy, copy_size, target + root_size, target_size - root_size)) {
+                    return -1;
+                }
+                free(target);
+            }
+            free(copy);
         }
+        size_t copy_size;
+        char *copy = mem_path(envs.host_home, strlen(envs.host_home), ".Xauthority", 11, &copy_size);
+        ret = io_exists(copy);
+        if (ret == -1) {
+            return -1;
+        }
+        if (!ret) {
+            size_t target_size;
+            char *target = mem_path(user.home, strlen(user.home), ".Xauthority", 11, &target_size);
+            if (mount_user_volume(mounts.root, root_size, copy, copy_size, target, target_size)) {
+                return -1;
+            }
+            free(target);
+        }
+        free(copy);
     }
 
     if (changeroot(mounts.root)) {

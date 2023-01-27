@@ -52,9 +52,6 @@ int parse_envs(env_t * env, char **envs, size_t envs_count, bool gui)
         if (read_env(envs[i], ENV_USER, ENV_USER_SIZE, &env->user)) {
             continue;
         }
-        if (read_env(envs[i], ENV_XDG, ENV_XDG_SIZE, &env->xdg_runtime_dir)) {
-            continue;
-        }
         // TODO: replace existing if not unique...
         env->envs[env->envs_count++] = envs[i];
     }
@@ -67,12 +64,18 @@ int parse_envs(env_t * env, char **envs, size_t envs_count, bool gui)
     if (!env->lang) {
         env->lang = env_default(ENV_LANG, ENV_LANG_SIZE + 1, ENV_LANG "=C");
     }
-    if (gui && !env->xdg_runtime_dir) {
+    if (gui) {
         char *val = getenv(ENV_XDG);
         if (val) {
-            env->xdg_runtime_dir = val - ENV_XDG_SIZE - 1;
+            env->host_xdg_runtime_dir = val;
         } else {
             // TODO: obtain caller from real uid or SUDO_UID or parent process
+        }
+        val = getenv("HOME");   // TODO: do not trust this value, do some mumbo jumbo
+        if (val) {
+            env->host_home = val;
+        } else {
+            // TODO: ...
         }
     }
     return 0;

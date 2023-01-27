@@ -11,7 +11,8 @@ typedef struct {
     char *home;
     char *shell;
     char *user;
-    char *xdg_runtime_dir;
+    char *host_xdg_runtime_dir;
+    char *host_home;
     char **envs;
     size_t envs_count;
 } env_t;
