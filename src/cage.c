@@ -314,10 +314,11 @@ int spawn_cage(config_t * config)
 
         if (have_wayland) {
             // TODO: preserve XDG_CURRENT_DESKTOP unless overwritten
-            envs.envs = mem_reallocate(envs.envs, sizeof(char *) * (envs.envs_count + 7));
+            envs.envs = mem_reallocate(envs.envs, sizeof(char *) * (envs.envs_count + 8));
             if (!envs.envs) {
                 return -1;
             }
+            envs.envs[envs.envs_count++] = "WAYLAND_DISPLAY=wayland-0";
             envs.envs[envs.envs_count++] = "XDG_SESSION_TYPE=wayland";
             envs.envs[envs.envs_count++] = "GDK_BACKEND=wayland";
             envs.envs[envs.envs_count++] = "QT_QPA_PLATFORM=wayland-egl";
