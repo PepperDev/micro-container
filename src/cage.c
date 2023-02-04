@@ -303,7 +303,7 @@ int spawn_cage(config_t * config)
             envs.envs[envs.envs_count++] = user_xdg;
             size_t copy_size;
             char *copy = mem_path(mounts.root, root_size, user_xdg + 16, size - 16, &copy_size);
-            if (io_mkdir(copy, copy_size)) {
+            if (io_mkdir(copy, copy_size)) { // TODO: create it with mode 0700 instead of 755
                 return -1;
             }
             if (io_chown(copy, user.uid, user.gid)) {
