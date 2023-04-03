@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <signal.h>
 
 #define CAGE_ROOT "/tmp/.cageroot"
 #define CAGE_ROOT_SIZE 14
@@ -243,8 +244,22 @@ int spawn_cage(config_t * config)
             return -1;
         }
         int status = 0;
-        if (pidwait(pid, &status)) {
-            return -1;
+        for (;;) {
+            pid_t wpid;
+            wpid = pidwait(-1, &status);
+            if (wpid == -1) {
+                return -1;
+            }
+            if (wpid == pid) {
+                break;
+            }
+            ret = pidexists(pid);
+            if (ret == -1) {
+                return -1;
+            }
+            if (ret) {
+                break;
+            }
         }
         if (io_unlink(config->pidfile)) {
             return -1;
@@ -253,6 +268,7 @@ int spawn_cage(config_t * config)
     } else if (close_pid(fd)) {
         return -1;
     }
+    // signal(SIGCHLD, SIG_IGN);
 
     user_t user;
     if (parse_user
@@ -303,7 +319,7 @@ int spawn_cage(config_t * config)
             envs.envs[envs.envs_count++] = user_xdg;
             size_t copy_size;
             char *copy = mem_path(mounts.root, root_size, user_xdg + 16, size - 16, &copy_size);
-            if (io_mkdir(copy, copy_size)) { // TODO: create it with mode 0700 instead of 755
+            if (io_mkdir(copy, copy_size)) {    // TODO: create it with mode 0700 instead of 755
                 return -1;
             }
             if (io_chown(copy, user.uid, user.gid)) {

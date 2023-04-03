@@ -220,11 +220,19 @@ int close_pid(int fd)
     return 0;
 }
 
-int pidwait(pid_t pid, int *status)
+pid_t pidwait(pid_t pid, int *status)
 {
-    if (waitpid(pid, status, 0) == -1 && errno != ECHILD) {
+    // repeat while return == -1 && errno == EINTR
+    pid_t ret;
+    do {
+        ret = waitpid(pid, status, 0);
+    } while(ret == -1 && errno == EINTR);
+    if (ret == -1 && errno != ECHILD) {
         fprintf(stderr, "Unable to wait process %d.\n", pid);
         return -1;
+    }
+    if (pid <= 0) {
+        return ret;
     }
     // if status try to parse it?
     // WTERMSIG(status) || WEXITSTATUS(status)
