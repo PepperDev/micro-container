@@ -2,6 +2,10 @@ TARGET  ?= bin/cage
 DESTDIR ?= /usr/local
 
 SOURCES = $(patsubst %,src/%.c, \
+		super/super_parse \
+		super/super_do \
+		super/super_escalate \
+		error/error_log \
 		mem \
 		user \
 		config \
@@ -30,7 +34,7 @@ $(TARGET): $(OBJS) | bin
 	$(CC) $(LDFLAGS) -o $@ $(OBJS) $(LIBS)
 	strip $@
 
-.objs/%.o: src/%.c | .objs
+.objs/%.o: src/%.c | .objs $(DIRS)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 .objs/mem.o: src/mem.h
@@ -50,8 +54,7 @@ $(DIRS):
 	-mkdir -p $@
 
 clean:
-	-rm -f $(TARGET) $(OBJS)
-	-rmdir -p $(DIRS)
+	-rm -rf $(TARGET) .objs
 
 install:
 	install -o 0 -g 0 -m 4755 $(TARGET) $(DESTDIR)/bin/

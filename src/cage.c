@@ -23,7 +23,7 @@ static int spawn_existing(config_t *, env_t *);
 static int launch_cage(env_t *, user_t *, char *, char *, char **, size_t);
 
 // compute_cage
-int spawn_cage(config_t * config)
+int spawn_cage(config_t *config)
 {
     size_t name_size = 0, pidfile_size;
     bool compute_name_size = true;
@@ -303,7 +303,7 @@ int spawn_cage(config_t * config)
             envs.envs[envs.envs_count++] = user_xdg;
             size_t copy_size;
             char *copy = mem_path(mounts.root, root_size, user_xdg + 16, size - 16, &copy_size);
-            if (io_mkdir(copy, copy_size)) { // TODO: create it with mode 0700 instead of 755
+            if (io_mkdir(copy, copy_size)) {    // TODO: create it with mode 0700 instead of 755
                 return -1;
             }
             if (io_chown(copy, user.uid, user.gid)) {
@@ -420,7 +420,7 @@ int spawn_cage(config_t * config)
     return launch_cage(&envs, &user, config->currentdir, config->initscript, config->command, config->command_count);
 }
 
-static int spawn_existing(config_t * config, env_t * envs)
+static int spawn_existing(config_t *config, env_t *envs)
 {
     int fd;
     pid_t pid = readpid(config->pidfile, &fd);
@@ -462,7 +462,7 @@ static int spawn_existing(config_t * config, env_t * envs)
     return launch_cage(envs, &user, config->currentdir, NULL, config->command, config->command_count);
 }
 
-static int launch_cage(env_t * envs, user_t * users, char *dir, char *init, char **args, size_t args_count)
+static int launch_cage(env_t *envs, user_t *users, char *dir, char *init, char **args, size_t args_count)
 {
     char *home = envs->home;
     char *user = envs->user;

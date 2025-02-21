@@ -25,7 +25,7 @@ typedef struct {
 
 static int launch_exec(exec_t *);
 
-int launch(launch_t * launch)
+int launch(launch_t *launch)
 {
     if (setenv("PATH", launch->path, 1)) {
         fprintf(stderr, "Unable to set PATH environment.\n");
@@ -72,7 +72,7 @@ int launch(launch_t * launch)
     return launch_exec(&value);
 }
 
-static int launch_exec(exec_t * launch)
+static int launch_exec(exec_t *launch)
 {
     if (launch->dir && chdir(launch->dir)) {
         fprintf(stderr, "Unable to change directory to %s.\n", launch->dir);

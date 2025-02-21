@@ -22,7 +22,7 @@
 static bool read_env(char *, char *, size_t, char **);
 static char *env_default(char *, size_t, char *);
 
-int parse_envs(env_t * env, char **envs, size_t envs_count, bool gui)
+int parse_envs(env_t *env, char **envs, size_t envs_count, bool gui)
 {
     memset(env, 0, sizeof(env_t));
     env->envs = envs;

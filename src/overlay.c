@@ -8,7 +8,7 @@
 
 static void buffer_append_opt(buffer_t, char *, size_t);
 
-char *compute_overlay(config_t * config, size_t name_size, bool overlay2, size_t *upper_size, size_t *work_size,
+char *compute_overlay(config_t *config, size_t name_size, bool overlay2, size_t *upper_size, size_t *work_size,
                       size_t *lower_size)
 {
     if (config->lowerdir && *config->lowerdir) {

@@ -17,7 +17,7 @@ static int mount_bind(char *, char *, bool);
 static int mount_user(char *, size_t, char *);
 static int mount_cgroup(char *, size_t, char *);
 
-int prepare_mounts(mount_t * mounts, pid_t * pid)
+int prepare_mounts(mount_t *mounts, pid_t *pid)
 {
     if (unshare(CLONE_NEWNS | CLONE_NEWPID | CLONE_NEWCGROUP)) {
         fprintf(stderr, "Unable to unshare mount and pid.\n");

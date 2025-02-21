@@ -134,7 +134,7 @@ void *buffer_use(buffer_t buf)
     return data;
 }
 
-static void buffer_grow(buffer_local * buf, size_t required)
+static void buffer_grow(buffer_local *buf, size_t required)
 {
     if (buf->length + required <= buf->capacity) {
         return;

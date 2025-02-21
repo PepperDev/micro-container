@@ -64,7 +64,7 @@ int check_superuser(int argc, char *argv[])
     return -1;
 }
 
-int parse_user(user_t * data, char *file_passwd, char *file_group, char *user, char *group, bool name, bool home,
+int parse_user(user_t *data, char *file_passwd, char *file_group, char *user, char *group, bool name, bool home,
                bool shell, bool root)
 {
     memset(data, 0, sizeof(user_t));
@@ -227,7 +227,7 @@ int parse_user(user_t * data, char *file_passwd, char *file_group, char *user, c
     return 0;
 }
 
-static int fill_groups(char *file, group_t * list, size_t count, size_t left)
+static int fill_groups(char *file, group_t *list, size_t count, size_t left)
 {
     FILE *fd = fopen(file, "r");
     if (!fd) {

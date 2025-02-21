@@ -17,7 +17,7 @@ static void print_version(char *);
 
 static void print_help(char *);
 
-int config_parse(config_t * config, int argc, char *argv[])
+int config_parse(config_t *config, int argc, char *argv[])
 {
     memset(config, 0, sizeof(config_t));
     for (int i = 1; i < argc; i++) {

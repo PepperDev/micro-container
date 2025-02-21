@@ -1,3 +1,5 @@
+#include "super/super.h"
+#include "error/error.h"
 #include "config.h"
 #include "user.h"
 #include "proc.h"
@@ -6,8 +8,13 @@
 
 int main(int argc, char *argv[])
 {
-    if (check_superuser(argc, argv)) {
-        return EXIT_FAILURE;
+    if (super_parse(argc, argv)) {
+        return error_log(super_do());
+    }
+
+    const char *error = super_escalate(argc, argv);
+    if (error) {
+        return error_log(error);
     }
 
     config_t config;

@@ -28,7 +28,7 @@ To run an Alpine based system:
     if [ ! -d "$rootdir" ]; then
       sudo mkdir -p "$rootdir"
       wget -qO- \
-        'https://dl-cdn.alpinelinux.org/alpine/v3.17/releases/x86_64/alpine-minirootfs-3.17.1-x86_64.tar.gz' |
+        'https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/x86_64/alpine-minirootfs-3.21.3-x86_64.tar.gz' |
         sudo tar -xzf- -C "$rootdir"
     fi
     # Then simply:
@@ -43,7 +43,7 @@ If you want an unprivileged Alpine system you can do instead:
       tmp="$(mktemp -d)"
       mkdir "$tmpdir/none" "$tmpdir/root"
       wget -qO- \
-        'https://dl-cdn.alpinelinux.org/alpine/v3.17/releases/x86_64/alpine-minirootfs-3.17.1-x86_64.tar.gz' |
+        'https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/x86_64/alpine-minirootfs-3.21.3-x86_64.tar.gz' |
         sudo tar -xzf- -C "$tmpdir/root"
       cage \
         -a "$tmpdir/app" \
@@ -97,6 +97,9 @@ If you want an unprivileged Alpine system with dynamic user creation you can do 
     if application name is empty or "/var/lib/microcontainer/app-${name}"
     if application name is given, used only to compute upperdir and workdir
 
+    -C
+        unshare cgroup
+
     -c currentdir
         directory command will run inside the container, default to "/"
 
@@ -121,6 +124,9 @@ If you want an unprivileged Alpine system with dynamic user creation you can do 
 
     -l
         lower directory default to "/"
+
+    -N
+        unshare network
 
     -n name
         applicaion name used only to compute appdir and pidfile
