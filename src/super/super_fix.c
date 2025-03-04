@@ -1,9 +1,9 @@
 #include "super.h"
-#include <stddef.h>
-#include <sys/stat.h>
-#include <unistd.h>
+#include <stddef.h>             // NULL
+#include <sys/stat.h>           // stat chmod
+#include <unistd.h>             // chown
 
-const char *super_do()
+const char *super_fix()
 {
     struct stat fst;
     const char *path = "/proc/self/exe";

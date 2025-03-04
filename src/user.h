@@ -23,8 +23,6 @@ typedef struct {
     size_t root_shell_size;
 } user_t;
 
-int check_superuser(int argc, char *argv[]);
-
 int parse_user(user_t *, char *, char *, char *, char *, bool, bool, bool, bool);
 
 #endif

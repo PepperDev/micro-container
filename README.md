@@ -96,6 +96,11 @@ If you want an unprivileged Alpine system with dynamic user creation you can do 
         application base dir default to "/var/lib/microcontainer/default"
     if application name is empty or "/var/lib/microcontainer/app-${name}"
     if application name is given, used only to compute upperdir and workdir
+    if no custom upperdir is given and if lowerdir is a parent directory in
+   	the same filesystem, it will generate a 10G ext4 image at
+   	"/var/lib/microcontainer.img" that will be mounted at
+   	"/var/lib/microcontainer-local" and it will be used as base for the
+   	application name instead
 
     -C
         unshare cgroup
@@ -110,8 +115,9 @@ If you want an unprivileged Alpine system with dynamic user creation you can do 
         setup environment and volumes to support graphical applications
 
     -g group
-        group name or uid to run command, default to 0, can contain
-    multiples values separated by colon
+        group name or uid to run command, default to 0, if user is given try to
+    compute user groups to use as default, can contain multiples values
+    separated by colon
 
     -h
         print help
@@ -138,8 +144,7 @@ If you want an unprivileged Alpine system with dynamic user creation you can do 
 
     -U upperdir
         upper directory default to "${appdir}/upper", must not have
-    lowerdir as a the parent directory in the same filesystem, otherwise a
-    loop in "${upperdir}/../.." will be created if possible
+    lowerdir as a the parent directory in the same filesystem
 
     -u user
         user name or uid to run command, default to 0, can follow groups

@@ -1,7 +1,7 @@
 #ifndef CAGE_H
 #define CAGE_H
 
-#include "config.h"
+#include "config/config.h"
 
 int spawn_cage(config_t *);
 

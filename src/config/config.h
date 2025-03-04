@@ -1,8 +1,8 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#include <stdbool.h>
-#include <sys/types.h>
+#include <stdbool.h>            // bool
+#include <sys/types.h>          // size_t
 
 typedef struct {
     char *name;
@@ -23,8 +23,10 @@ typedef struct {
     size_t command_count;
     bool stop;
     bool gui;
+    bool cgroup;
+    bool network;
 } config_t;
 
-int config_parse(config_t *, int, char *[]);
+const char *config_parse(config_t *, int, char *[]);
 
 #endif

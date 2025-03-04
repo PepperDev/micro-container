@@ -1,5 +1,5 @@
 #include "super.h"
-#include <string.h>
+#include <string.h>             // memcmp
 
 bool super_parse(int argc, char *argv[])
 {

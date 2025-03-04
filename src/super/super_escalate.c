@@ -1,10 +1,11 @@
 #include "super.h"
-#include <stddef.h>
-#define _GNU_SOURCE
-#include <unistd.h>
+#include <stddef.h>             // NULL
+#define _GNU_SOURCE             // vfork
+#include <unistd.h>             // geteuid getegid setegid dup2 close execvp
 #undef _GNU_SOURCE
-#include <fcntl.h>
-#include <sys/wait.h>
+#include <fcntl.h>              // open
+#include <sys/wait.h>           // waitpid
+#include <sys/stat.h>           // umask
 
 const char *super_escalate(int argc, char *argv[])
 {
@@ -14,6 +15,7 @@ const char *super_escalate(int argc, char *argv[])
                 return "Unable to change effective group.\n";
             }
         }
+        umask(0);
         return NULL;
     }
 
