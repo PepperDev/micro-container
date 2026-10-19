@@ -1,0 +1,62 @@
+#!/bin/sh
+set -e
+
+echo "=== Install dependencies ==="
+apk add --no-cache -q gcc make musl-dev linux-headers indent cppcheck py3-pip git
+pip install --break-system-packages lizard --quiet
+
+echo "=== Setup non-root user ==="
+# The unit tests chown to uid/gid 1000, so the unprivileged user must be 1000.
+uid=1000
+install -o "$uid" -g "$uid" -m 755 -d /tmp/w
+install -o "$uid" -g "$uid" -m 644 /dev/null "$GITHUB_STEP_SUMMARY"
+
+echo "=== Build ==="
+HOME=/tmp/w nsenter "--setuid=$uid" "--setgid=$uid" "--wd=/tmp/w" sh -es <<'BUILD'
+echo "=== Checkout ==="
+git init -q
+git remote add origin \
+  "${GITHUB_SERVER_URL%%://*}://x-access-token:${GITHUB_TOKEN}@${GITHUB_SERVER_URL#*://}/${GITHUB_REPOSITORY}.git"
+git fetch -q --depth=1 origin "${GITHUB_SHA}"
+git checkout -qf "${GITHUB_SHA}"
+
+echo "=== Format check ==="
+# GNU indent 2.2.13 is not idempotent for an argument list containing a comma
+# immediately followed by a cast of a parenthesized expression: every pass
+# toggles ", (type)" <-> ",(type)", so no committed form satisfies the check.
+# Format a copy of every file twice and fail with the offending file name if
+# the two passes disagree (an actionable error) before the normal check.
+fmt_bad=""
+mkdir -p /tmp/w/fmt
+# shellcheck disable=SC2044  # source paths never contain whitespace
+for f in $(find src tests -name '*.[ch]'); do
+  cp "$f" /tmp/w/fmt/a
+  indent -linux -l120 -i2 -nut /tmp/w/fmt/a
+  cp /tmp/w/fmt/a /tmp/w/fmt/b
+  indent -linux -l120 -i2 -nut /tmp/w/fmt/b
+  cmp -s /tmp/w/fmt/a /tmp/w/fmt/b || fmt_bad="$fmt_bad $f"
+done
+if [ -n "$fmt_bad" ]; then
+  echo "error: non-idempotent formatting, rewrite the offending construct:" >&2
+  for f in $fmt_bad; do echo "  $f" >&2; done
+  exit 1
+fi
+make format
+git diff --exit-code
+
+echo "=== Build ==="
+make -j4 CC=gcc
+
+echo "=== Test, lint & coverage ==="
+report_rc=0
+make report CC=gcc > /tmp/w/report.txt 2>&1 || report_rc=$?
+cat /tmp/w/report.txt
+{
+  echo '## Quality Report'
+  echo ''
+  echo '```'
+  cat /tmp/w/report.txt
+  echo '```'
+} >> "$GITHUB_STEP_SUMMARY"
+[ "$report_rc" -eq 0 ]
+BUILD

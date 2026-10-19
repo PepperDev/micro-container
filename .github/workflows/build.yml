@@ -1,0 +1,26 @@
+name: Build
+on:
+  push:
+    branches:
+    - master
+  pull_request:
+    branches:
+    - master
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: alpine
+    steps:
+      - name: Build
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          wget -qO /tmp/build \
+            --header="Authorization: Bearer $GITHUB_TOKEN" \
+            --header="Accept: application/vnd.github.raw" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/contents/.github/scripts/build?ref=$GITHUB_SHA"
+          sh -e /tmp/build

@@ -1,162 +1,44 @@
-# Micro-container
-If you are tired of the huge footprint Docker deamon does on your system it is made for you, a simply and easy container isolation software, you can run applications on jail without requiring any deamon running forever.
+# cage
 
-**Warning**: this software is considered to be insecure, it can let unprivileged users to run instructions as root and potentially damaging your system, use it at your own risk.
+Simple, easy container-like process isolation software. Standalone — no daemon, no OCI runtime, minimal footprint.
 
-## Download
-Download the avaiable version at [releases](https://github.com/PepperDev/micro-container/releases) page.
+## Project
 
-    $ wget -qO- https://github.com/PepperDev/micro-container/releases/download/v0.3.1/cage.amd64 |
-      sudo install -v -o 0 -g 0 -m 04755 /dev/stdin /usr/local/bin/cage
+- **Maintainer:** Tiago Augusto Pimenta
+- **Release page:** [https://github.com/PepperDev/micro-container/releases](https://github.com/PepperDev/micro-container/releases)
+
+## Features
+
+- Linux namespace isolation (PID, mount, network, cgroup)
+- No daemon — single-shot execution
+- Static binary — zero external runtime dependencies
 
 ## Build
-`$ make`
 
-## Install
-`$ sudo make install`
+Prerequisites: `musl-gcc`, `make`, `indent`, `cppcheck`, `lizard`, `gcov`
 
-## Examples
-To run a container based on your own host system:
+    make
+    sudo make install
 
-    $ cage
-    # or
-    $ cage -n name
-
-To run an Alpine based system:
-
-    rootdir=/var/lib/microcontainer-root/alpine
-    if [ ! -d "$rootdir" ]; then
-      sudo mkdir -p "$rootdir"
-      wget -qO- \
-        'https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/x86_64/alpine-minirootfs-3.21.3-x86_64.tar.gz' |
-        sudo tar -xzf- -C "$rootdir"
-    fi
-    # Then simply:
-    cage -l "$rootdir" -n alpine
-    # Easy peasy, if you want other name than alpine, just inform the root
-    cage -l "$rootdir" -n other-container-name
-
-If you want an unprivileged Alpine system you can do instead:
-
-    rootdir=/var/lib/microcontainer-root/alpine
-    if [ ! -d "$rootdir" ]; then
-      tmp="$(mktemp -d)"
-      mkdir "$tmpdir/none" "$tmpdir/root"
-      wget -qO- \
-        'https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/x86_64/alpine-minirootfs-3.21.3-x86_64.tar.gz' |
-        sudo tar -xzf- -C "$tmpdir/root"
-      cage \
-        -a "$tmpdir/app" \
-        -p "$tmpdir/pid" \
-        -l "$tmpdir/none" \
-        -U "$tmpdir/root" \
-        -- \
-        /bin/sh -s <<\EOF
-    apk add --no-cache sudo
-    addgroup -g 1000 user
-    adduser -D -G user -u 1000 -s /bin/ash -h /home/user user
-    printf 'user ALL=(ALL:ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/nopass
-    EOF
-      sudo mkdir -p "$(dirname "$rootdir")"
-      sudo rm -rf "${rootdir}.tmp"
-      sudo mv "$tmpdir/root" "${rootdir}.tmp"
-      sudo mv "${rootdir}.tmp" "$rootdir"
-      sudo rm -rf "$tmpdir"
-    fi
-    # Then simply:
-    cage -l "$rootdir" -u 1000 -g 1000 -n alpine
-
-If you want a gui capable user:
-
-    cage -G -u "$(id -u)" -g "$(id -g):$(id -G | tr ' ' ':')"
-
-If you want an unprivileged Alpine system with dynamic user creation you can do instead:
-
-    rootdir=/var/lib/microcontainer-root/alpine
-    if [ ! -d "$rootdir" ]; then
-      sudo mkdir -p "$rootdir"
-      wget -qO- \
-        'https://dl-cdn.alpinelinux.org/alpine/v3.17/releases/x86_64/alpine-minirootfs-3.17.1-x86_64.tar.gz' |
-        sudo tar -xzf- -C "$rootdir"
-    fi
-    # Then simply:
-    cage -l "$rootdir" -i /proc/self/fd/3 -u "$(id -u)" -g "$(id -g)" 3<<EOF
-    if [ ! -f /usr/bin/sudo ]; then
-      apk add --no-cache sudo
-      addgroup -g $(id -g) user
-      adduser -D -G user -u $(id -u) -s /bin/ash -h /home/user user
-      printf 'user ALL=(ALL:ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/nopass
-    fi
-    EOF
+Binary is placed at `bin/cage` and installed to `$(PREFIX)/bin` (default `/usr/local`).
 
 ## Usage
-    cage [options...] [--] [command...]
 
-    -a appdir
-        application base dir default to "/var/lib/microcontainer/default"
-    if application name is empty or "/var/lib/microcontainer/app-${name}"
-    if application name is given, used only to compute upperdir and workdir
-    if no custom upperdir is given and if lowerdir is a parent directory in
-   	the same filesystem, it will generate a 10G ext4 image at
-   	"/var/lib/microcontainer.img" that will be mounted at
-   	"/var/lib/microcontainer-local" and it will be used as base for the
-   	application name instead
+    cage [options] [command] [args...]
 
-    -C
-        unshare cgroup
+Examples:
 
-    -c currentdir
-        directory command will run inside the container, default to "/"
+| Command | Description |
+|---------|-------------|
+| `cage /bin/sh` | Run a shell in an isolated environment |
+| `cage -u 1000 -l /mnt/rootfs /bin/bash` | Run as user 1000 with custom lower dir |
+| `cage -e PATH=/usr/bin -v /data:/mnt/data /bin/app` | Add env vars and map volumes |
+| `cage -G -i /tmp/setup.sh /bin/gui-program` | Init script with GUI support |
+| `cage -k -n myapp` | Kill a running instance by name |
+| `cage -n myapp /bin/sh`     | Re-enter existing instance (implicit when running) |
 
-    -e env
-        add environment variable in the format key=value
+See [docs/cli-arguments.md](docs/cli-arguments.md) for full CLI reference.
 
-    -G
-        setup environment and volumes to support graphical applications
+## License
 
-    -g group
-        group name or uid to run command, default to 0, if user is given try to
-    compute user groups to use as default, can contain multiples values
-    separated by colon
-
-    -h
-        print help
-
-    -i initscript
-        script to be run inside the container as root before command
-
-    -k
-        stop/kill current instance
-
-    -l
-        lower directory default to "/"
-
-    -N
-        unshare network
-
-    -n name
-        applicaion name used only to compute appdir and pidfile
-
-    -p pidfile
-        pid file default to "/run/microcontainer/pid" if application name
-    is empty or "/run/microcontainer/${name}.pid" if application name is
-    given
-
-    -U upperdir
-        upper directory default to "${appdir}/upper", must not have
-    lowerdir as a the parent directory in the same filesystem
-
-    -u user
-        user name or uid to run command, default to 0, can follow groups
-    separated by colon
-
-    -V
-        print version
-
-    -v volume
-        map a volume from the host to the instance, if contains a colon
-    the value before is considered in the host and after in the instance
-
-    -w workdir
-        overlay work directory default to "${appdir}/work", must be in the
-    same filesystem as upperdir
+MIT

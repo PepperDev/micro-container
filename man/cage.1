@@ -1,0 +1,185 @@
+.TH CAGE 1 "2026-05-31" "cage" "User Commands"
+.SH NAME
+cage \- simple container\-like process isolation
+.SH SYNOPSIS
+.B cage
+[options...] [\-\-] [\fIcommand\fR...]
+.SH DESCRIPTION
+\fBcage\fR runs a command inside an isolated environment backed by OverlayFS.
+It uses Linux namespaces, bind mounts, and user/group switching to provide
+filesystem and process isolation without requiring a daemon.
+.P
+Cage is a single static binary with no runtime dependencies.
+.P
+The \fIcommand\fR argument accepts two special forms:
+.RS
+.TP
+\fB\-\fR
+Run the user's shell instead of a named command.
+Shell resolution: \fB\-e\fR \fISHELL=path\fR \(rarr guest passwd shell \(rarr \fI/bin/sh\fR.
+The shell is invoked as a login shell (\fB\-\fIbase\fR argv[0]).
+.TP
+\fB\-\-\fR
+When \fB\-\-\fR is given with no following command, the behavior is the same
+as \fB\-\fR: the user's shell is run.
+When \fB\-\-\fR is given with a following command, the command is run as\-is
+(standard POSIX \fB\-\-\fR behavior).
+Without \fB\-\-\fR, bare \fBcage\fR with no command exits with an error.
+.RE
+.SH OPTIONS
+.SS "Application directories"
+.TP
+.BI \-a " <appdir>"
+Application base directory.
+.RS
+Default: \fI/var/lib/cage/default\fR (no application name) or
+\fI/var/lib/cage/app-${name}\fR (with \fB\-n\fR).
+Used only to compute \fBupperdir\fR and \fBworkdir\fR.
+If no custom \fB\-U\fR is given and \fBlowerdir\fR is a parent directory on
+the same filesystem, cage creates a 10G ext4 image at
+\fI/var/lib/cage-loop.img\fR, mounts it at
+\fI/var/lib/cage-loop\fR, and uses it as the application base
+instead.
+.RE
+.TP
+.BI \-l " <dir>"
+OverlayFS lower (read\-only) directory.  Default: \fI/\fP.
+.TP
+.BI \-U " <dir>"
+OverlayFS upper (writable) directory.  Default: \fI${appdir}/upper\fP.
+Must not have \fBlowerdir\fR as a parent directory on the same filesystem.
+.TP
+.BI \-w " <dir>"
+OverlayFS work directory.  Default: \fI${appdir}/work\fP.
+Must be on the same filesystem as \fBupperdir\fR.
+.SS "Namespaces"
+.TP
+.B \-C
+Unshare the cgroup namespace.
+.TP
+.B \-N
+Unshare the network namespace.
+.SS "User and group"
+.TP
+.BI \-u " <user>"
+User name or UID to run the command as.  Default: \fB0\fR.
+Colon\-separated groups may follow the user (e.g. \fB1000:1001:1002\fR).
+.TP
+.BI \-g " <group>"
+Group name or GID.  Default: \fB0\fR.
+Colon\-separated for multiple groups.
+If \fB\-u\fR is given, supplementary groups are computed automatically.
+.SS "Environment"
+.TP
+.BI \-e " <key=value>"
+Add an environment variable passed into the container.
+May be given multiple times.
+.TP
+.BI \-c " <dir>"
+Working directory inside the container.  Default: \fI/\fP.
+.SS "Filesystem and volumes"
+.TP
+.BI \-v " <host:container>"
+Map a volume from the host into the container.
+If a colon is present, the left side is the host path and the right side is
+the mount point inside the container.
+May be given multiple times.
+.SS "Lifecycle"
+.TP
+.BI \-i " <file>"
+Init script to run as root inside the container before the target command.
+.TP
+.B \-k
+Stop/kill the running instance identified by \fB\-p\fR or \fB\-n\fR.
+Sends SIGTERM followed by SIGKILL after a timeout.
+.SS "Naming"
+.TP
+.B \-p
+.IR <file>
+PID file path.
+.RS
+Default: \fI/run/cage/pid\fR (no application name) or
+\fI/run/cage/${name}.pid\fR (with \fB\-n\fR).
+.RE
+.SS "Re-entry"
+.TP
+.B \-r
+Re\-enter an existing running instance.
+Joins PID, cgroup, network, and mount namespaces of the
+running process identified by \fB\-p\fR or \fB\-n\fR,
+then forks and runs the specified command inside those namespaces.
+.SS "Miscellaneous"
+.TP
+.B \-G
+Setup environment and volumes to support GUI applications
+(e.g. X11 socket, DRI device).
+.TP
+.B \-h
+Print help and exit.
+.TP
+.B \-V
+Print version and exit.
+.SH EXIT STATUS
+.TP
+0
+Success.
+.TP
+1
+General error (invalid argument, setup failure).
+.TP
+\fIexit code of command\fR
+The exit status of the target command is forwarded to the caller.
+.TP
+128+\fIN\fR
+The target command was terminated by signal \fIN\fR.
+.SH EXAMPLES
+.P
+Run a shell with default settings:
+.IP
+.B cage /bin/sh
+.P
+Run the user's shell (login shell, resolved from \fB\-e SHELL\fP, passwd, or \fI/bin/sh\fP):
+.IP
+.B cage \-
+.P
+Run the user's shell with \fB\-\-\fP (no command):
+.IP
+.B cage \-\-
+.P
+Run as a specific user with a custom lower directory:
+.IP
+.B cage \-u 1000 \-l /mnt/rootfs /bin/bash
+.P
+Add environment variables and map a volume:
+.IP
+.B cage \-e PATH=/usr/bin \-v /data:/mnt/data /bin/app
+.P
+Kill a running instance by name:
+.IP
+.B cage \-k \-n myapp
+.P
+Run with an init script and graphical support:
+.IP
+.B cage \-G \-i /tmp/setup.sh /bin/gui\-program
+.SH FILES
+.TP
+.I /var/lib/cage/default
+Default application base directory (when no \fB\-n\fR is given).
+.TP
+.I /var/lib/cage/app-${name}
+Application base directory for named instances.
+.TP
+.I /var/lib/cage-loop.img
+Ext4 image file created automatically when applicable.
+.TP
+.I /run/cage/pid
+Default PID file (when no \fB\-n\fR is given).
+.SH BUGS
+Report bugs at the project repository.
+.SH AUTHOR
+Tiago Augusto Pimenta
+.SH SEE ALSO
+.BR namespaces (7),
+.BR overlayfs (7),
+.BR mount (8),
+.BR capabilities (7)

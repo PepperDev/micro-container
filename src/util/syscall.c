@@ -1,0 +1,285 @@
+#include "syscall.h"
+#include "net/net.h"
+#include "net/netlink.h"
+// cppcheck-suppress missingIncludeSystem
+#include <sys/mount.h>
+// cppcheck-suppress missingIncludeSystem
+#include <sys/statfs.h>
+// cppcheck-suppress missingIncludeSystem
+#include <sched.h>
+// cppcheck-suppress missingIncludeSystem
+#include <unistd.h>
+// cppcheck-suppress missingIncludeSystem
+#include <sys/ioctl.h>
+// cppcheck-suppress missingIncludeSystem
+#include <linux/loop.h>
+// cppcheck-suppress missingIncludeSystem
+#include <linux/futex.h>
+// cppcheck-suppress missingIncludeSystem
+#include <sys/syscall.h>
+// cppcheck-suppress missingIncludeSystem
+#include <sys/xattr.h>
+// cppcheck-suppress missingIncludeSystem
+#include <signal.h>
+// cppcheck-suppress missingIncludeSystem
+#include <grp.h>
+// cppcheck-suppress missingIncludeSystem
+#include <errno.h>
+
+/* weak defaults — overridden by tests/mock_syscall.c in test binary */
+
+// cppcheck-suppress staticFunction
+int __sys_mount(const char *source, const char *target, const char *fstype, unsigned long flags, const void *data)
+{
+  return mount(source, target, fstype, flags, data);
+}
+
+weak_alias(__sys_mount, sys_mount);
+
+// cppcheck-suppress staticFunction
+int __sys_umount(const char *target)
+{
+  return umount(target);
+}
+
+weak_alias(__sys_umount, sys_umount);
+
+// cppcheck-suppress staticFunction
+int __sys_statfs(const char *path, struct statfs *buf)
+{
+  return statfs(path, buf);
+}
+
+weak_alias(__sys_statfs, sys_statfs);
+
+// cppcheck-suppress staticFunction
+int __sys_unshare(int flags)
+{
+  return unshare(flags);
+}
+
+weak_alias(__sys_unshare, sys_unshare);
+
+// cppcheck-suppress staticFunction
+int __sys_setns(int fd, int nstype)
+{
+  return setns(fd, nstype);
+}
+
+weak_alias(__sys_setns, sys_setns);
+
+// cppcheck-suppress staticFunction
+int __sys_chroot(const char *path)
+{
+  return chroot(path);
+}
+
+weak_alias(__sys_chroot, sys_chroot);
+
+// cppcheck-suppress staticFunction
+int __sys_finit_module(int fd, const char *args, int flags)
+{
+  return (int)syscall(SYS_finit_module, fd, args, flags);
+}
+
+weak_alias(__sys_finit_module, sys_finit_module);
+
+// cppcheck-suppress staticFunction
+int __sys_setxattr(const char *path, const char *name, const void *value, size_t size, int flags)
+{
+  return setxattr(path, name, value, size, flags);
+}
+
+weak_alias(__sys_setxattr, sys_setxattr);
+
+// cppcheck-suppress staticFunction
+int __sys_loop_get_free(int ctl_fd)
+{
+  return (int)ioctl(ctl_fd, LOOP_CTL_GET_FREE);
+}
+
+weak_alias(__sys_loop_get_free, sys_loop_get_free);
+
+// cppcheck-suppress staticFunction
+int __sys_loop_add(int ctl_fd)
+{
+  return (int)ioctl(ctl_fd, LOOP_CTL_ADD, 0);
+}
+
+weak_alias(__sys_loop_add, sys_loop_add);
+
+// cppcheck-suppress staticFunction
+int __sys_loop_get_stat(int loop_fd)
+{
+  return (int)ioctl(loop_fd, LOOP_GET_STATUS, NULL);
+}
+
+weak_alias(__sys_loop_get_stat, sys_loop_get_stat);
+
+// cppcheck-suppress staticFunction
+int __sys_loop_set_fd(int loop_fd, int img_fd)
+{
+  return (int)ioctl(loop_fd, LOOP_SET_FD, img_fd);
+}
+
+weak_alias(__sys_loop_set_fd, sys_loop_set_fd);
+
+// cppcheck-suppress staticFunction
+int __sys_loop_set_status64(int loop_fd, const void *info)
+{
+  return (int)ioctl(loop_fd, LOOP_SET_STATUS64, info);
+}
+
+weak_alias(__sys_loop_set_status64, sys_loop_set_status64);
+
+// cppcheck-suppress staticFunction
+int __sys_loop_clr_fd(int loop_fd)
+{
+  return (int)ioctl(loop_fd, LOOP_CLR_FD, 0);
+}
+
+weak_alias(__sys_loop_clr_fd, sys_loop_clr_fd);
+
+// cppcheck-suppress staticFunction
+int __sys_futex_wait(volatile int *uaddr, int val)
+{
+  return (int)syscall(SYS_futex, uaddr, FUTEX_WAIT, val, NULL, NULL, 0);
+}
+
+weak_alias(__sys_futex_wait, sys_futex_wait);
+
+// cppcheck-suppress staticFunction
+int __sys_futex_wait_to(volatile int *uaddr, int val, const struct timespec *timeout)
+{
+  return (int)syscall(SYS_futex, uaddr, FUTEX_WAIT, val, timeout, NULL, 0);
+}
+
+weak_alias(__sys_futex_wait_to, sys_futex_wait_to);
+
+// cppcheck-suppress staticFunction
+int __sys_futex_wake(volatile int *uaddr, int n)
+{
+  return (int)syscall(SYS_futex, uaddr, FUTEX_WAKE, n, NULL, NULL, 0);
+}
+
+weak_alias(__sys_futex_wake, sys_futex_wake);
+
+// cppcheck-suppress staticFunction
+int __sys_setgroups(size_t size, const gid_t *list)
+{
+  return setgroups(size, list);
+}
+
+weak_alias(__sys_setgroups, sys_setgroups);
+
+// cppcheck-suppress staticFunction
+int __sys_netlink_open(int *fd)
+{
+  return netlink_open(fd);
+}
+
+weak_alias(__sys_netlink_open, sys_netlink_open);
+
+// cppcheck-suppress staticFunction
+void __sys_netlink_close(int fd)
+{
+  netlink_close(fd);
+}
+
+weak_alias(__sys_netlink_close, sys_netlink_close);
+
+// cppcheck-suppress staticFunction
+int __sys_netlink_send(int fd, const void *buf, size_t len)
+{
+  return netlink_send(fd, buf, len);
+}
+
+weak_alias(__sys_netlink_send, sys_netlink_send);
+
+// cppcheck-suppress staticFunction
+int __sys_netlink_recv(int fd, void *buf, size_t cap, size_t *len)
+{
+  return netlink_recv(fd, buf, cap, len);
+}
+
+weak_alias(__sys_netlink_recv, sys_netlink_recv);
+
+// cppcheck-suppress staticFunction
+int __sys_netlink_recv_nb(int fd, void *buf, size_t cap, size_t *len)
+{
+  return netlink_recv_nb(fd, buf, cap, len);
+}
+
+weak_alias(__sys_netlink_recv_nb, sys_netlink_recv_nb);
+
+// cppcheck-suppress staticFunction
+int __sys_netlink_send_ack(int fd, const void *buf, size_t len)
+{
+  return netlink_send_ack(fd, buf, len);
+}
+
+weak_alias(__sys_netlink_send_ack, sys_netlink_send_ack);
+
+// cppcheck-suppress staticFunction
+int __sys_netlink_recv_dump(int fd, void *buf, size_t cap, size_t *len)
+{
+  return netlink_recv_dump(fd, buf, cap, len);
+}
+
+weak_alias(__sys_netlink_recv_dump, sys_netlink_recv_dump);
+
+// cppcheck-suppress staticFunction
+int __sys_netfilter_open(int *fd)
+{
+  return netfilter_open(fd);
+}
+
+weak_alias(__sys_netfilter_open, sys_netfilter_open);
+
+// cppcheck-suppress staticFunction
+int __sys_access(const char *path, int mode)
+{
+  return access(path, mode);
+}
+
+weak_alias(__sys_access, sys_access);
+
+// cppcheck-suppress staticFunction
+int __sys_stat(const char *path, struct stat *buf)
+{
+  return stat(path, buf);
+}
+
+weak_alias(__sys_stat, sys_stat);
+
+// cppcheck-suppress staticFunction
+DIR *__sys_opendir(const char *path)
+{
+  return opendir(path);
+}
+
+weak_alias(__sys_opendir, sys_opendir);
+
+// cppcheck-suppress staticFunction
+struct dirent *__sys_readdir(DIR *dir)
+{
+  return readdir(dir);
+}
+
+weak_alias(__sys_readdir, sys_readdir);
+
+// cppcheck-suppress staticFunction
+int __sys_closedir(DIR *dir)
+{
+  return closedir(dir);
+}
+
+weak_alias(__sys_closedir, sys_closedir);
+
+// cppcheck-suppress staticFunction
+int __sys_chown(const char *path, uid_t owner, gid_t group)
+{
+  return chown(path, owner, group);
+}
+
+weak_alias(__sys_chown, sys_chown);
