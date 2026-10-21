@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <stdlib.h>
+#include <sys/stat.h>
 
 /* Keep stdlib mocking minimal — add more sys_* wrappers only when a test
    actually needs to intercept a libc call. No speculative wrappers. */
@@ -95,6 +96,35 @@ static void test_setup_gui_with_xdg_wayland(void)
 
   ASSERT_EQ(setup_gui_mounts(&(struct gui_ctx) {.root = root,.uid = 1000,.gid = 1000,.host_xrd = xrd },
                              "/home/user"), 0);
+
+  mem_free(xrd);
+  test_rmtree(root);
+  mem_free(root);
+}
+
+static void test_setup_gui_xdg_truncated(void)
+{
+  mock_sys_reset();
+  _mock_mount_ret = 0;
+  _mock_setxattr_ret = 0;
+
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+  char *xrd = mem_path(root, "xdg-trunc");
+  io_mkdir(xrd);
+  char *wayland = mem_path(xrd, "wayland-0");
+  io_touch(wayland);
+  mem_free(wayland);
+
+  static char long_xrd[700];
+  memset(long_xrd, 'x', sizeof(long_xrd) - 1);
+  long_xrd[0] = '/';
+  long_xrd[sizeof(long_xrd) - 1] = '\0';
+
+  ASSERT_EQ(setup_gui_mounts(&(struct gui_ctx) {
+                             .root = root,.uid = 1000,.gid = 1000,.host_xrd = xrd,
+                             .guest_xrd = long_xrd,
+                             }, "/home/user"), -1);
 
   mem_free(xrd);
   test_rmtree(root);
@@ -247,6 +277,7 @@ static void test_setup_gui_pulse_cookie_chown(void)
   _mock_mount_ret = 0;
   _mock_setxattr_ret = 0;
   _mock_chown_ret = 0;
+  _mock_fchownat_ret = 0;
 
   char *root = test_temp_root();
   ASSERT_NOT_NULL(root);
@@ -261,11 +292,11 @@ static void test_setup_gui_pulse_cookie_chown(void)
   io_touch(cookie);
   mem_free(cookie);
 
-  _mock_chown_count = 0;
+  _mock_fchownat_count = 0;
   ASSERT_EQ(setup_gui_mounts(&(struct gui_ctx) {
                              .root = root,.uid = 1000,.gid = 1000,.host_home = home,
                              }, "/home/user"), 0);
-  ASSERT_NE(_mock_chown_count, 0);
+  ASSERT_NE(_mock_fchownat_count, 0);
 
   mem_free(home);
   test_rmtree(root);
@@ -277,7 +308,8 @@ static void test_setup_gui_pulse_cookie_chown_fails(void)
   mock_sys_reset();
   _mock_mount_ret = 0;
   _mock_setxattr_ret = 0;
-  _mock_chown_ret = 1;
+  _mock_chown_ret = 0;
+  _mock_fchownat_ret = 1;
 
   char *root = test_temp_root();
   ASSERT_NOT_NULL(root);
@@ -657,6 +689,87 @@ static void test_child_setup_gui_fixup_home(void)
   mem_free(root);
 }
 
+static void test_setup_gui_home_escapes(void)
+{
+  mock_sys_reset();
+  _mock_mount_ret = 0;
+  _mock_setxattr_ret = 0;
+
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+
+  ASSERT_EQ(setup_gui_mounts(&(struct gui_ctx) {.root = root,.uid = 1000,.gid = 1000 }, "../../etc"), -1);
+
+  test_rmtree(root);
+  mem_free(root);
+}
+
+static void test_setup_gui_cookie_path_escapes(void)
+{
+  mock_sys_reset();
+  _mock_mount_ret = 0;
+  _mock_setxattr_ret = 0;
+
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+  char *home = mem_path(root, "home-esc");
+  io_mkdir(home);
+
+  char *cookies_dir = mem_path(home, ".config/pulse");
+  io_mkdir(cookies_dir);
+  mem_free(cookies_dir);
+
+  char *cookie = mem_path(home, ".config/pulse/cookie");
+  io_touch(cookie);
+  mem_free(cookie);
+
+  ASSERT_EQ(setup_gui_mounts(&(struct gui_ctx) {
+                             .root = root,.uid = 1000,.gid = 1000,.host_home = home,
+                             .guest_pc = "../../run/pulse/cookie",
+                             }, "/home/user"), -1);
+
+  mem_free(home);
+  test_rmtree(root);
+  mem_free(root);
+}
+
+static void test_setup_gui_home_symlink_rejected(void)
+{
+  mock_sys_reset();
+  _mock_mount_ret = 0;
+  _mock_setxattr_ret = 0;
+
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+  char *outside = mem_path(root, "outside");
+  ASSERT_EQ(mkdir(outside, 0755), 0);
+  char *link = mem_path(root, "link");
+  ASSERT_EQ(symlink(outside, link), 0);
+
+  char *home = mem_path(root, "host-home");
+  io_mkdir(home);
+  char *cookies_dir = mem_path(home, ".config/pulse");
+  io_mkdir(cookies_dir);
+  mem_free(cookies_dir);
+  char *cookie = mem_path(home, ".config/pulse/cookie");
+  io_touch(cookie);
+  mem_free(cookie);
+
+  ASSERT_EQ(setup_gui_mounts(&(struct gui_ctx) {
+                             .root = root,.uid = 1000,.gid = 1000,.host_home = home,
+                             }, "link/sub"), -1);
+
+  char *escaped = mem_path(outside, "sub");
+  struct stat st;
+  ASSERT_EQ(stat(escaped, &st), -1);
+  mem_free(escaped);
+  mem_free(home);
+  mem_free(link);
+  mem_free(outside);
+  test_rmtree(root);
+  mem_free(root);
+}
+
 SUITE(gui)
 {
   RUN_TEST(setup_gui_not_graphical);
@@ -664,6 +777,7 @@ SUITE(gui)
   RUN_TEST(setup_gui_no_host_home);
   RUN_TEST(setup_gui_with_xdg_empty);
   RUN_TEST(setup_gui_with_xdg_wayland);
+  RUN_TEST(setup_gui_xdg_truncated);
   RUN_TEST(setup_gui_mount_xdg_fails);
   RUN_TEST(setup_gui_x11_no_access);
   RUN_TEST(setup_gui_x11_enabled);
@@ -685,4 +799,7 @@ SUITE(gui)
   RUN_TEST(setup_gui_custom_pulse_parent_under_root);
   RUN_TEST(setup_gui_guest_xrd);
   RUN_TEST(child_setup_gui_fixup_home);
+  RUN_TEST(setup_gui_home_escapes);
+  RUN_TEST(setup_gui_cookie_path_escapes);
+  RUN_TEST(setup_gui_home_symlink_rejected);
 }

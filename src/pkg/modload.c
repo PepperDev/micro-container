@@ -16,6 +16,8 @@
 // cppcheck-suppress missingIncludeSystem
 #include <sys/mman.h>
 // cppcheck-suppress missingIncludeSystem
+#include <sys/wait.h>
+// cppcheck-suppress missingIncludeSystem
 #include <unistd.h>
 // cppcheck-suppress missingIncludeSystem
 #include <linux/module.h>
@@ -110,20 +112,69 @@ int pipe_to_fd(FILE *f, int fd)
   return 0;
 }
 
+static void exec_filter(const char *prog, const char *path, int write_fd)
+{
+  if (dup2(write_fd, STDOUT_FILENO) < 0)
+    _exit(127);
+  close(write_fd);
+  execlp(prog, prog, path, (char *)NULL);
+  _exit(127);
+}
+
+static FILE *open_read_end(int fd, pid_t pid)
+{
+  FILE *r = fdopen(fd, "r");
+  if (!r) {
+    close(fd);
+    waitpid(pid, NULL, 0);
+  }
+  return r;
+}
+
+static int spawn_filter(const char *prog, const char *path, FILE **out, pid_t *out_pid)
+{
+  int pfd[2];
+  if (pipe(pfd) != 0)
+    return -1;
+  pid_t pid = fork();
+  if (pid < 0) {
+    close(pfd[0]);
+    close(pfd[1]);
+    return -1;
+  }
+  if (pid == 0) {
+    close(pfd[0]);
+    exec_filter(prog, path, pfd[1]);
+  }
+  close(pfd[1]);
+  FILE *r = open_read_end(pfd[0], pid);
+  if (!r)
+    return -1;
+  *out = r;
+  *out_pid = pid;
+  return 0;
+}
+
+static int child_ok(pid_t pid)
+{
+  int status = 0;
+  if (waitpid(pid, &status, 0) < 0)
+    return 0;
+  return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+}
+
 static int decompress_xzstd_to_fd(int fd, const char *path, int comp)
 {
-  size_t plen = strlen(path);
-  char cmd[plen + 12];
   const char *prog = (comp == 2) ? "xzcat" : "zstdcat";
-  snprintf(cmd, sizeof(cmd), "%s \"%s\"", prog, path);
-  FILE *zf = popen(cmd, "r");
-  if (!zf)
+  FILE *zf;
+  pid_t pid;
+  if (spawn_filter(prog, path, &zf, &pid) != 0)
     return -1;
   int r = pipe_to_fd(zf, fd);
-  int pstat = pclose(zf);
-  if (r != 0 || pstat != 0 || lseek(fd, 0, SEEK_SET) == -1)
+  fclose(zf);
+  if (!child_ok(pid) || r != 0)
     return -1;
-  return 0;
+  return lseek(fd, 0, SEEK_SET) == -1 ? -1 : 0;
 }
 
 // cppcheck-suppress staticFunction

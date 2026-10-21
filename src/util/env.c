@@ -123,11 +123,6 @@ char *env_read_pid_environ(pid_t pid)
     buf_free(&b);
     return NULL;
   }
-  if (buf_grow(&b, 1) != 0) {
-    buf_free(&b);
-    return NULL;
-  }
-  b.data[b.len] = '\0';
   return buf_done(&b);
 }
 

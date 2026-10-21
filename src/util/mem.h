@@ -10,6 +10,7 @@ void mem_free(void *ptr);
 char *mem_strdup(const char *s);
 char *mem_cat(const void *s1, size_t n1, ...);
 char *mem_path(const char *base, const char *append);
+int mem_path_escapes(const char *rel);
 
 #define MEM_CAT_END ((const void *)0)
 

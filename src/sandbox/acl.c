@@ -3,6 +3,10 @@
 // cppcheck-suppress missingIncludeSystem
 #include <string.h>
 // cppcheck-suppress missingIncludeSystem
+#include <stdio.h>
+// cppcheck-suppress missingIncludeSystem
+#include <unistd.h>
+// cppcheck-suppress missingIncludeSystem
 #include <sys/mount.h>
 // cppcheck-suppress missingIncludeSystem
 #include <stdint.h>
@@ -38,8 +42,28 @@ static const struct acl_ent acl_tmpl = {
 
 int acl_set(const char *path, uid_t uid, gid_t gid, const gid_t *groups, size_t ngroups)
 {
+  int fd = sys_open_rdonly(path, SYS_OPEN_NOFOLLOW);
+  if (fd < 0)
+    return -1;
+  int r = acl_set_fd(fd, uid, gid, groups, ngroups);
+  close(fd);
+  return r;
+}
+
+static int fd_setxattr(int fd, const char *name, const void *value, size_t size)
+{
+  char path[64];
+  int n = snprintf(path, sizeof(path), "/proc/self/fd/%d", fd);
+  if (n <= 0 || (size_t)n >= sizeof(path))
+    return -1;
+  return sys_setxattr(path, name, value, size, 0);
+}
+
+// cppcheck-suppress staticFunction
+int acl_set_fd(int fd, uid_t uid, gid_t gid, const gid_t *groups, size_t ngroups)
+{
   struct stat st;
-  int r = sys_stat(path, &st);
+  int r = sys_fstat(fd, &st);
   if (r)
     return -1;
   if (!S_ISSOCK(st.st_mode))
@@ -50,7 +74,7 @@ int acl_set(const char *path, uid_t uid, gid_t gid, const gid_t *groups, size_t 
   struct acl_ent a = acl_tmpl;
   memcpy(a.e + 6, &uid, 4);
 
-  r = sys_setxattr(path, "system.posix_acl_access", &a, sizeof(a), 0);
+  r = fd_setxattr(fd, "system.posix_acl_access", &a, sizeof(a));
   return r ? -1 : 0;
 }
 

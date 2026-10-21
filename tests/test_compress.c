@@ -667,6 +667,39 @@ static void test_decompress_zstd_header(void)
   buf_free(&out);
 }
 
+static void test_decompress_gzip_extra_truncated(void)
+{
+  unsigned char data[] = {
+    0x1F, 0x8B, 0x08, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF,
+    0xFF, 0x00
+  };
+  buf_t out = BUF_INIT;
+  ASSERT_EQ(decompress_gzip(data, sizeof(data), &out), -1);
+  buf_free(&out);
+}
+
+static void test_decompress_gzip_name_unterminated(void)
+{
+  unsigned char data[] = {
+    0x1F, 0x8B, 0x08, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF,
+    0x66, 0x6F, 0x6F
+  };
+  buf_t out = BUF_INIT;
+  ASSERT_EQ(decompress_gzip(data, sizeof(data), &out), -1);
+  buf_free(&out);
+}
+
+static void test_decompress_gzip_hcrc_truncated(void)
+{
+  unsigned char data[] = {
+    0x1F, 0x8B, 0x08, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF,
+    0x90
+  };
+  buf_t out = BUF_INIT;
+  ASSERT_EQ(decompress_gzip(data, sizeof(data), &out), -1);
+  buf_free(&out);
+}
+
 /* ----- open_and_read tests ----- */
 
 static void test_open_and_read_nonexistent(void)
@@ -785,6 +818,9 @@ SUITE(compress)
   RUN_TEST(decompress_gzip_os3);
   RUN_TEST(decompress_gzip_bad_crc);
   RUN_TEST(decompress_gzip_multi_member);
+  RUN_TEST(decompress_gzip_extra_truncated);
+  RUN_TEST(decompress_gzip_name_unterminated);
+  RUN_TEST(decompress_gzip_hcrc_truncated);
   RUN_TEST(decompress_xz_header);
   RUN_TEST(decompress_zstd_header);
 

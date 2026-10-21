@@ -90,7 +90,7 @@ static int write_enable_controllers(const char *cgdir)
   if (trim_newline(ctrls.data, strlen(ctrls.data))) {
     char val[256];
     size_t vlen;
-    if (build_subtree_value(ctrls.data, strlen(ctrls.data), val, &vlen) == 0)
+    if (build_subtree_value(ctrls.data, strlen(ctrls.data), val, sizeof(val), &vlen) == 0)
       write_subtree_value(cgdir, val, vlen);
   }
   buf_free(&ctrls);
@@ -141,13 +141,9 @@ static int write_procs(const char *cgdir, pid_t pid)
   char *procs = mem_path(cgdir, "cgroup.procs");
   if (!procs)
     return -1;
-  int fd = open(procs, O_WRONLY);
+  int r = write_pid(procs, pid);
   mem_free(procs);
-  if (fd < 0)
-    return -1;
-  dprintf(fd, "%d\n", (int)pid);
-  close(fd);
-  return 0;
+  return r;
 }
 
 // cppcheck-suppress staticFunction

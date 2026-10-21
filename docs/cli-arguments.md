@@ -35,6 +35,8 @@ Options:
   -N             Unshare network namespace
   -n <name>      Application name
                  Used only to compute appdir and pidfile default paths.
+                 Must be non-empty and must not contain '/': the name is
+                 interpolated into those paths as a single path element.
   -p <file>      PID file path
                   Default: /run/cage/pid (no app name)
                   Or: /run/cage/${name}.pid (with -n name)
@@ -53,6 +55,9 @@ Options:
                  Map a volume from the host into the container. If a colon
                  is present, the left side is the host path and the right
                  side is the container mount point.
+                 The container mount point must be non-empty and must not
+                 contain a `..` path element: it is created under the
+                 sandbox root, so `..` would escape it.
   -w <dir>       OverlayFS work directory (default: ${appdir}/work)
                  Must be on the same filesystem as upperdir.
                  On the samefs loopback flow (see -a) a custom -w must be a

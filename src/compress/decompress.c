@@ -18,32 +18,48 @@ static int check_gzip_magic(const unsigned char *p, size_t in_len)
   return 0;
 }
 
+static int advance(size_t *o, size_t n, size_t in_len)
+{
+  if (*o + n > in_len)
+    return -1;
+  *o += n;
+  return 0;
+}
+
 static int skip_fextra(const unsigned char *p, size_t in_len, size_t *o)
 {
   if (*o + 2 > in_len)
     return -1;
-  *o += 2 + ((unsigned)p[*o] | ((unsigned)p[*o + 1] << 8));
-  return 0;
+  size_t xlen = (unsigned)p[*o] | ((unsigned)p[*o + 1] << 8);
+  return advance(o, 2 + xlen, in_len);
 }
 
-static void skip_string(const unsigned char *p, size_t in_len, size_t *o)
+static int skip_string(const unsigned char *p, size_t in_len, size_t *o)
 {
   while (*o < in_len && p[*o])
     (*o)++;
+  if (*o >= in_len)
+    return -1;
   (*o)++;
+  return 0;
+}
+
+static int skip_gzip_tail(const unsigned char *p, size_t in_len, size_t *o, int flg)
+{
+  static const int str_flags[] = { 0x08, 0x10 };
+  for (size_t i = 0; i < sizeof(str_flags) / sizeof(str_flags[0]); i++)
+    if ((flg & str_flags[i]) && skip_string(p, in_len, o) != 0)
+      return -1;
+  if (flg & 0x02)
+    return advance(o, 2, in_len);
+  return 0;
 }
 
 static int skip_gzip_flags(const unsigned char *p, size_t in_len, size_t *o, int flg)
 {
   if ((flg & 0x04) && skip_fextra(p, in_len, o) != 0)
     return -1;
-  if (flg & 0x08)
-    skip_string(p, in_len, o);
-  if (flg & 0x10)
-    skip_string(p, in_len, o);
-  if (flg & 0x02)
-    *o += 2;
-  return 0;
+  return skip_gzip_tail(p, in_len, o, flg);
 }
 
 static int skip_gzip_header(const unsigned char *p, size_t in_len, size_t *off)

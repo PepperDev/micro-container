@@ -333,7 +333,7 @@
   `sys_loop_set_status64`/`sys_loop_clr_fd` so the success path is mockable.
   Added `test_loop_returns_open_fd`, documented §Loop device: hold the setup fd
   across mount with LO_FLAGS_AUTOCLEAR, and added rule 9 to
-  [lifecycle.md §Samefs / Ext4 Loopback Flow](lifecycle.md#samefs--ext4-loopback-flow).
+  [lifecycle.md §Samefs / Ext4 Loopback Flow](lifecycle.md#samefs-ext4-loopback-flow).
 - **Recurrence likelihood**: Medium — AUTOCLEAR's last-release semantics are
   easy to overlook when refactoring loop setup.
 
@@ -456,7 +456,7 @@
   while the first entry yielded `{DISPLAY}` — re-entry did not produce "the
   same GUI environment variables as a first-entry `-G` run"
   ([§Re-entry Flow](lifecycle.md#re-entry-flow-joining-existing-instance)
-  rule 5; [§Environment Variables](lifecycle.md#environment-variables):
+  rule 5; [§Environment Variables](lifecycle.md#environment-variable-precedence):
   `XDG_RUNTIME_DIR` is set only when a Wayland or pulse socket is detected).
 - **Root cause**: `fixup_xdg_runtime_dir()` in `src/core/reuse.c` (added in
   27a593d when the older `env_fixup_xdg_runtime()` calls were removed)

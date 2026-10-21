@@ -257,6 +257,30 @@ static void read_error(const char *op, const char *path, int quiet)
     fprintf(stderr, "cage: unable to %s %s\n", op, path);
 }
 
+static int read_loop(int fd, buf_t *b, const char *path, int quiet)
+{
+  for (;;) {
+    if (buf_grow(b, CHUNK) != 0)
+      return -1;
+    ssize_t n = read(fd, b->data + b->len, CHUNK);
+    if (n < 0) {
+      read_error("read", path, quiet);
+      return -1;
+    }
+    if (n == 0)
+      return 0;
+    b->len += n;
+  }
+}
+
+static int buf_terminate(buf_t *b)
+{
+  if (buf_grow(b, 1) != 0)
+    return -1;
+  b->data[b->len] = '\0';
+  return 0;
+}
+
 static int read_file(const char *path, buf_t *b, int quiet)
 {
   int fd = open(path, O_RDONLY | O_CLOEXEC);
@@ -265,24 +289,11 @@ static int read_file(const char *path, buf_t *b, int quiet)
     return -1;
   }
 
-  for (;;) {
-    if (buf_grow(b, CHUNK) != 0) {
-      close(fd);
-      return -1;
-    }
-    ssize_t n = read(fd, b->data + b->len, CHUNK);
-    if (n < 0) {
-      read_error("read", path, quiet);
-      close(fd);
-      return -1;
-    }
-    if (n == 0)
-      break;
-    b->len += n;
-  }
-
+  int r = read_loop(fd, b, path, quiet);
+  if (r == 0)
+    r = buf_terminate(b);
   close(fd);
-  return 0;
+  return r;
 }
 
 int io_read(const char *path, buf_t *b)

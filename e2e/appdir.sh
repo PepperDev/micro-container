@@ -259,4 +259,84 @@ docker exec "$CAGE_CTR" sh -c '
   rm -rf /other /tmp2 /tmp3 /ad8custom /ad8custom-loop /myw /ad9up /up9x 2>/dev/null
   mount -t tmpfs -o size=1G tmpfs /var/lib/cage'
 
+# samefs must not trigger when lowerdir is not a parent of upperdir even if they
+# share the same filesystem. Put both under a normal tmpfs (/optfs) so the
+# container's overlay root does not make the appdir an overlay-on-overlay.
+docker exec "$CAGE_CTR" sh -c '
+  umount /optfs 2>/dev/null || :
+  rm -rf /optfs /optfs-loop /optfs-loop.img
+  mkdir -p /optfs
+  mount -t tmpfs -o size=1G tmpfs /optfs
+  cp -a /altroot /optfs/lower
+  mkdir -p /optfs/appdir
+'
+e2e_run e2e_exec cage -l /optfs/lower -a /optfs/appdir -- /bin/sh -c 'echo OK'
+e2e_check_rc "sibling lower/upper samefs should not loopback rc" 0 "$E2E_RC"
+e2e_check_contains "sibling lower/upper runs" "$E2E_OUT" "OK"
+e2e_run e2e_exec sh -c 'test ! -e /optfs-loop && test ! -e /optfs.appdir-loop && printf NOLOOP'
+e2e_check_contains "no loop created for sibling lower/upper" "$E2E_OUT" "NOLOOP"
+e2e_run e2e_exec sh -c 'test -d /optfs/appdir/upper && printf HASUPPER'
+e2e_check_contains "upper created under appdir" "$E2E_OUT" "HASUPPER"
+
+# lowerdir is a parent of the appdir but the appdir is on a different
+# filesystem (tmpfs mounted under the lower tree) — loopback must not trigger.
+docker exec "$CAGE_CTR" sh -c '
+  umount /optfs2/root/app 2>/dev/null || :
+  umount /optfs2 2>/dev/null || :
+  rm -rf /optfs2 /optfs2-loop /optfs2-loop.img
+  mkdir -p /optfs2
+  mount -t tmpfs -o size=1G tmpfs /optfs2
+  cp -a /altroot /optfs2/root
+  mkdir -p /optfs2/root/app
+  mount -t tmpfs tmpfs /optfs2/root/app
+'
+e2e_run e2e_exec cage -l /optfs2/root -a /optfs2/root/app -- /bin/sh -c 'echo OK2'
+e2e_check_rc "lower parent of appdir but appdir on tmpfs rc" 0 "$E2E_RC"
+e2e_check_contains "lower parent of appdir on tmpfs runs" "$E2E_OUT" "OK2"
+e2e_run e2e_exec sh -c 'test ! -e /optfs2/root-loop && test ! -e /optfs2/root/app-loop && printf NOLOOP'
+e2e_check_contains "no loop for tmpfs appdir under lower" "$E2E_OUT" "NOLOOP"
+
+docker exec "$CAGE_CTR" sh -c '
+  umount /optfs2/root/app 2>/dev/null || :
+  while umount /optfs2 2>/dev/null; do :; done
+  while umount /optfs 2>/dev/null; do :; done
+  rm -rf /optfs /optfs2 /optfs-loop /optfs2-loop /optfs-loop.img /optfs2-loop.img
+  rm -rf /tmp/test /tmp/test-loop /tmp/test-loop.img'
+
+# Appdir on its own ordinary filesystem (a tmpfs mounted at /appfs) with the
+# lowerdir and the appdir as siblings under it. Both layouts must run without a
+# loopback: (A) lowerdir empty and the rootfs planted in the appdir's upper,
+# (B) lowerdir holding the rootfs and the upper computed.
+docker exec "$CAGE_CTR" sh -c '
+  umount /appfs 2>/dev/null || :
+  rm -rf /appfs /appfs-loop /appfs-loop.img
+  mkdir -p /appfs
+  mount -t tmpfs -o size=1G tmpfs /appfs
+  mkdir -p /appfs/app/lower
+  cp -a /altroot /appfs/app/upper
+'
+e2e_run e2e_exec cage -l /appfs/app/lower -a /appfs/app -- /bin/sh -c 'echo OKA'
+e2e_check_rc "samefs empty lower, seeded upper rc" 0 "$E2E_RC"
+e2e_check_contains "samefs empty lower, seeded upper runs" "$E2E_OUT" "OKA"
+e2e_run e2e_exec sh -c 'test ! -e /appfs-loop && test ! -e /appfs/app-loop && printf NOLOOP'
+e2e_check_contains "no loop for empty lower, seeded upper" "$E2E_OUT" "NOLOOP"
+
+docker exec "$CAGE_CTR" sh -c '
+  umount /appfs 2>/dev/null || :
+  rm -rf /appfs /appfs-loop /appfs-loop.img
+  mkdir -p /appfs
+  mount -t tmpfs -o size=1G tmpfs /appfs
+  mkdir -p /appfs/app
+  cp -aT /altroot /appfs/app/lower
+'
+e2e_run e2e_exec cage -l /appfs/app/lower -a /appfs/app -- /bin/sh -c 'echo OKB'
+e2e_check_rc "samefs full lower, computed upper rc" 0 "$E2E_RC"
+e2e_check_contains "samefs full lower, computed upper runs" "$E2E_OUT" "OKB"
+e2e_run e2e_exec sh -c 'test ! -e /appfs-loop && test ! -e /appfs/app-loop && printf NOLOOP'
+e2e_check_contains "no loop for full lower, computed upper" "$E2E_OUT" "NOLOOP"
+
+docker exec "$CAGE_CTR" sh -c '
+  umount /appfs 2>/dev/null || :
+  rm -rf /appfs /appfs-loop /appfs-loop.img'
+
 e2e_end

@@ -35,4 +35,13 @@ e2e_check_rc "fd2 mixed rc" 0 "$E2E_RC"
 e2e_check_contains "fd2 command read its own stdin" "$E2E_OUT" "CMD_LINE1"
 e2e_check_contains "fd2 init ran from fd 3" "$E2E_OUT" "INIT_RAN"
 
+# Init script exits non-zero: cage must fail and must not run the command.
+docker exec "$CAGE_CTR" sh -c 'printf "exit 7\n" > /altroot/init_fail.sh'
+e2e_run e2e_exec cage -l /altroot -n s2 -i /init_fail.sh -- sh -c 'echo SHOULD_NOT_RUN'
+e2e_check_rc "s2 init fail rc" 1 "$E2E_RC"
+if echo "$E2E_OUT" | grep -q "SHOULD_NOT_RUN"; then
+  echo "FAIL: command ran after init script failure" >&2
+  exit 1
+fi
+
 e2e_end

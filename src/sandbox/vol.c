@@ -34,6 +34,8 @@ int parse_vol(vol_t *v, const char *spec)
   const char *colon = strchr(spec, ':');
   if (set_target(v, spec, colon) != 0)
     return -1;
+  if (mem_path_escapes(v->target))
+    return -1;
   size_t host_len = colon ? (size_t)(colon - spec) : strlen(spec);
   if (host_len == 0 || host_len >= sizeof(v->host))
     return -1;

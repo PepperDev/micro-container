@@ -76,6 +76,23 @@ static void do_child_init(const char *root, const cage_config_t *cfg, const stru
   do_init(cfg->initscript, root, (env_t *) rc->env, root_user);
 }
 
+static void enter_cgroup_and_init(const cage_config_t *cfg, const struct run_ctx *rc, int has_cgroup)
+{
+  if (cfg->unshare_cgroup && cgroup_enter("/", has_cgroup >= 2) != 0)
+    _exit(1);
+  if (cfg->initscript)
+    do_child_init("/", cfg, rc);
+}
+
+static user_t *reread_guest_user(const cage_config_t *cfg)
+{
+  user_t *u = user_new(cfg->user, cfg->group, "/");
+  if (!u)
+    _exit(1);
+  eager_resolve_user(u);
+  return u;
+}
+
 static user_t *do_child_setup(const char *root, const cage_config_t *cfg, const struct run_ctx *rc, int has_cgroup)
 {
   env_t *env = (env_t *) rc->env;
@@ -83,8 +100,6 @@ static user_t *do_child_setup(const char *root, const cage_config_t *cfg, const 
     _exit(1);
   if (parse_envs(env, (char **)cfg->envvars, cfg->envvar_count) != 0)
     _exit(1);
-  if (cfg->initscript)
-    do_child_init(root, cfg, rc);
   user_t *u = user_new(cfg->user, cfg->group, root);
   if (!u)
     _exit(1);
@@ -99,14 +114,16 @@ static void run_mount_inner(const struct prep_result *pr, const cage_config_t *c
   if (mount_ns_setup(root_private) != 0 || prepare_overlay(pr->root, &pr->dirs) != 0)
     _exit(1);
 
+  inner_child_net(rc);
+
   int has_cgroup = cfg->unshare_cgroup ? rc->cg_fs_type : -2;
   user_t const *u = do_child_setup(pr->root, cfg, rc, has_cgroup);
   move_and_chroot(pr->root);
   child_root_ready(rc->root_futex);
 
-  if (cfg->unshare_cgroup && cgroup_enter("/", has_cgroup >= 2) != 0)
-    _exit(1);
-  inner_child_net(rc);
+  enter_cgroup_and_init(cfg, rc, has_cgroup);
+  if (cfg->initscript)
+    u = reread_guest_user(cfg);
   child_run(u, (env_t *) rc->env, (cage_config_t *) cfg);
 }
 

@@ -49,7 +49,9 @@ int resolve_script(const char *script, const char *root, char *buf, size_t size)
     if (!ok)
       return -1;
   }
-  snprintf(buf, size, "%s", script);
+  int n = snprintf(buf, size, "%s", script);
+  if (n < 0 || (size_t)n >= size)
+    return -1;
   return 0;
 }
 
@@ -97,8 +99,9 @@ static int run_init(const char *script, const char *root, env_t *env, const user
     return -1;
   if (pid == 0)
     init_child(root, env, script, user);
-  int st;
-  pidwait(pid, &st);
+  int st = 0;
+  if (pidwait(pid, &st) != 0)
+    return -1;
   return st == 0 ? 0 : -1;
 }
 
@@ -156,10 +159,22 @@ static void fixup_home(env_t *env, const user_t *user)
   env_map_put(&env->map, "HOME", h);
 }
 
-static void resolve_host_home(env_t *env)
+static int host_home_ok(const char *h)
+{
+  if (!h || h[0] != '/')
+    return 0;
+  if (mem_path_escapes(h))
+    return 0;
+  return io_isdir(h) == 0;
+}
+
+// cppcheck-suppress staticFunction
+void resolve_host_home(env_t *env)
 {
   const char *h = getenv("SUDO_HOME");
-  env->host_home = (char *)(h ? h : getenv("HOME"));
+  if (!h)
+    h = getenv("HOME");
+  env->host_home = host_home_ok(h) ? (char *)h : NULL;
 }
 
 static void resolve_host_paths(env_t *env, uid_t ruid)

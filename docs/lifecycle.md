@@ -98,6 +98,9 @@ define container process:
     guest_SHELL_override := false
     guest_SHELL := -e SHELL; if unset or empty: "/bin/sh", guest_SHELL_override := true
 
+    write "cgroup.procs" (if "-C")
+    if "-N": setup veth                          # see §Network Namespace Setup
+
     if "-i" given: run init script
       if not exist script and not exist "${root}/" + script: _exit 1
       guest script path := script                # exec guest-relative, never "${root}/" + script
@@ -126,8 +129,6 @@ define container process:
 
     chdir "${root}", mount --move "${root}" "/", chroot "."
     wake "root-ready" futex                      # temp root removable (see §Temp Root Cleanup)
-    write "cgroup.procs" (if "-C")
-    if "-N": setup veth                          # see §Network Namespace Setup
 
     PATH, TERM, LANG := guest_PATH, guest_TERM, guest_LANG (execve environ, plus all remaining "-e")
     HOME := guest_HOME
@@ -416,7 +417,11 @@ for the **guest user** (from CLI `-u`/`-g`). After `--initscript` completes,
 the caller creates a fresh guest `user_t` instance (re-parsed from the same CLI
 args) so the next getter call re-opens and re-caches from the modified
 `/etc/passwd` and `/etc/group`. The root `user_t` is never re-read — it was
-hardcoded as `uid=0` and never opens any file.
+hardcoded as `uid=0` and never opens any file. The re-read instance is rooted at
+`/` because the init script runs inside the chroot, after the network and cgroup
+setup, so this lookup is the first to see the init script's edits. The pre-init
+instance remains in use only for the GUI context, which is assembled before the
+chroot.
 
 ### Temp Root Cleanup
 
@@ -1019,10 +1024,12 @@ mounts.
 
 ### Samefs / Ext4 Loopback Flow
 
-When the appdir (default `/var/lib/cage` or `/var/lib/cage/app-${name}`) and lowerdir
-(usually `/`) are on the **same filesystem**, OverlayFS refuses to overlay them.
-Cage auto-detects this and creates an ext4 loopback image to serve as a separate
-filesystem for the appdir.
+When the appdir (default `/var/lib/cage` or `/var/lib/cage/app-${name}`) lands
+inside the lowerdir tree (usually under `/`) **and on the same filesystem**,
+OverlayFS refuses to overlay them. Cage auto-detects this and creates an ext4
+loopback image to serve as a separate filesystem for the appdir. An appdir that
+is a sibling of the lowerdir on an ordinary filesystem, or that already sits on
+its own filesystem (a mount under the lower tree), needs no loopback.
 
 This detection must happen **before** any `unshare()` call (including
 the private mount unshare that may be needed to mount cgroup2), so the ext4 loopback message
@@ -1033,14 +1040,20 @@ define handle same fs:
   # inputs (step 3, defaults already applied): computed_appdir,
   # computed_upperdir, computed_workdir; the raw config "upperdir" and
   # "workdir" are non-empty only for a custom -U/-w
-  grandparent dir of "${computed_upperdir}" → gp       # raw, for the stat
-  copy of gp, search existing parent → gp_exist        # only for the stat below
-  stat "${lowerdir}" + stat "${gp_exist}" → compare st_dev
-  r := (same filesystem? >0 : 0, -1 on error)
+  parent of "${computed_upperdir}" → appdir              # raw, for the stat
+  copy of appdir, search existing parent → appdir_exist  # only for the stat
+  if path_is_parent("${lowerdir}", "${appdir_exist}"):
+    # upperdir lands inside the lower tree: same fs is the conflict
+    stat "${lowerdir}" + stat "${appdir_exist}" → compare st_dev
+    r := (same filesystem? >0 : 0, -1 on error)
+  else if "${appdir_exist}" is on overlayfs:
+    r := (stat ok? >0 : -1)                 # overlay-on-overlay, no ancestry
+  else:
+    r := 0                                  # sibling on an ordinary filesystem
 
-  if r <= 0: return r                            # skip loopback or error
+  if r <= 0: return r    # different fs (own mount) or error: skip loopback
 
-  # r > 0: same filesystem
+  # r > 0: same filesystem and the appdir is inside the lower tree
   if "${upperdir}" non-empty: return -1   # custom -U, fatal (rule 3)
 
   # raw upperdir is empty ⇒ only computed values remain: derive the loop
@@ -1078,8 +1091,26 @@ define handle same fs:
 
 **Key rules:**
 
-1. **Samefs detection** — `stat(lowerdir)` and `stat(appdir_parent_closest_existing)`.
-   If `st_dev` matches, the filesystem is the same. The device of `lowerdir`
+1. **Samefs detection** — the loopback is needed only when the appdir
+   would land *inside the lowerdir tree* on the *same filesystem*, because
+   OverlayFS would then be trying to overlay a mount that already contains its
+   own lower content. Detection therefore has three parts:
+   - **Ancestry** — walk the appdir's path upward to its closest existing
+     ancestor (`appdir_closest_existing`) and test whether it is the lowerdir
+     itself or a path under it (`path_is_parent(lowerdir, ancestor)`). An
+     appdir that is a *sibling* of the lowerdir (e.g. `-l /srv/lower -a
+     /srv/app`) is not inside the lower tree.
+   - **Same filesystem** — for an ancestor inside the lower tree, `stat(lowerdir)`
+     and `stat(ancestor)` must share `st_dev`; if they differ, the appdir
+     already sits on its own filesystem (e.g. a tmpfs mounted under the lower
+     tree) and no loopback is needed.
+   - **Overlay-on-overlay** — for an ancestor *not* inside the lower tree, a
+     loopback is forced only when that ancestor is itself on an overlayfs
+     (`statfs(ancestor).f_type == OVERLAYFS_SUPER_MAGIC`), because OverlayFS
+     cannot nest. A sibling appdir on an ordinary filesystem needs no loopback
+     even though it shares the device with the lowerdir.
+   Only an inside-the-lower-tree ancestor with a matching `st_dev`, or a
+   non-ancestor on an overlayfs, requires a loopback. The device of `lowerdir`
    is passed through to the upper-dir-exists check (step 3), avoiding a
    redundant `stat("/")`.
 2. **Default appdir resolution** — `/var/lib/cage` is the default; if it does

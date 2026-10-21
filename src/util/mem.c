@@ -82,6 +82,20 @@ char *mem_path(const char *base, const char *append)
   return result;
 }
 
+int mem_path_escapes(const char *rel)
+{
+  const char *p = rel;
+  for (;;) {
+    const char *slash = strchr(p, '/');
+    size_t len = slash ? (size_t)(slash - p) : strlen(p);
+    if (len == 2 && strncmp(p, "..", 2) == 0)
+      return 1;
+    if (!slash)
+      return 0;
+    p = slash + 1;
+  }
+}
+
 int buf_grow(buf_t *b, size_t need)
 {
   if (b->len + need <= b->cap)

@@ -19,7 +19,7 @@ char *advance_line(char *p);
 int cgroup_v1_enter_one(const char *cg, const char *ctrl, const char *name, pid_t pid);
 int cgroup_v1_enter(const char *root, const char *name, pid_t pid);
 int cgroup_v2_enter(const char *root, const char *name, pid_t pid);
-int build_subtree_value(const char *in, size_t len, char *out, size_t *out_len);
+int build_subtree_value(const char *in, size_t len, char *out, size_t cap, size_t *out_len);
 int write_subtree(const char *cg, const char *val, size_t vlen);
 int enable_cgroup_controllers(const char *cg);
 int mount_cgroup_tmpfs(const char *cg);

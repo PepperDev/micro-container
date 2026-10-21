@@ -57,6 +57,53 @@ static void test_dash_dash(void)
   ASSERT_EQ(cfg.command_count, 2);
   ASSERT_STR_EQ(cfg.command[0], "/bin/sh");
   ASSERT_STR_EQ(cfg.command[1], "-x");
+  ASSERT_EQ(cfg.has_dashdash, 1);
+}
+
+static void test_dash_dash_bare(void)
+{
+  cage_config_t cfg;
+  char *argv[] = { "cage", "--", NULL };
+
+  cage_config_init(&cfg);
+  ASSERT_EQ(cage_parse_args(&cfg, 2, argv), 0);
+  ASSERT_EQ(cfg.command_count, 0);
+  ASSERT_EQ(cfg.has_dashdash, 1);
+}
+
+static void test_dash_dash_after_flag(void)
+{
+  cage_config_t cfg;
+  char *argv[] = { "cage", "-C", "--", "/bin/sh", NULL };
+
+  cage_config_init(&cfg);
+  ASSERT_EQ(cage_parse_args(&cfg, 4, argv), 0);
+  ASSERT_EQ(cfg.command_count, 1);
+  ASSERT_EQ(cfg.has_dashdash, 1);
+}
+
+static void test_dash_dash_as_option_arg(void)
+{
+  cage_config_t cfg;
+  char *argv[] = { "cage", "-a", "--", NULL };
+
+  cage_config_init(&cfg);
+  ASSERT_EQ(cage_parse_args(&cfg, 3, argv), 0);
+  ASSERT_STR_EQ(cfg.appdir, "--");
+  ASSERT_EQ(cfg.command_count, 0);
+  ASSERT_EQ(cfg.has_dashdash, 0);
+}
+
+static void test_dash_dash_as_option_arg_then_separator(void)
+{
+  cage_config_t cfg;
+  char *argv[] = { "cage", "-a", "--", "--", "/bin/sh", NULL };
+
+  cage_config_init(&cfg);
+  ASSERT_EQ(cage_parse_args(&cfg, 5, argv), 0);
+  ASSERT_STR_EQ(cfg.appdir, "--");
+  ASSERT_EQ(cfg.command_count, 1);
+  ASSERT_EQ(cfg.has_dashdash, 1);
 }
 
 static void test_option_a_short(void)
@@ -317,6 +364,24 @@ static void test_option_n_long(void)
   ASSERT_STR_EQ(cfg.name, "myapp");
 }
 
+static void test_option_n_rejects_path(void)
+{
+  cage_config_t cfg;
+  char *argv[] = { "cage", "-n", "../../tmp/x", "/bin/sh", NULL };
+
+  cage_config_init(&cfg);
+  ASSERT_EQ(cage_parse_args(&cfg, 4, argv), -1);
+}
+
+static void test_option_n_rejects_empty(void)
+{
+  cage_config_t cfg;
+  char *argv[] = { "cage", "-n", "", "/bin/sh", NULL };
+
+  cage_config_init(&cfg);
+  ASSERT_EQ(cage_parse_args(&cfg, 4, argv), -1);
+}
+
 static void test_option_p_short(void)
 {
   cage_config_t cfg;
@@ -484,6 +549,10 @@ SUITE(args)
   RUN_TEST(command_only);
   RUN_TEST(command_with_args);
   RUN_TEST(dash_dash);
+  RUN_TEST(dash_dash_bare);
+  RUN_TEST(dash_dash_after_flag);
+  RUN_TEST(dash_dash_as_option_arg);
+  RUN_TEST(dash_dash_as_option_arg_then_separator);
   RUN_TEST(option_a_short);
   RUN_TEST(option_a_long);
   RUN_TEST(option_c_short);
@@ -509,6 +578,8 @@ SUITE(args)
   RUN_TEST(option_N_long);
   RUN_TEST(option_n_short);
   RUN_TEST(option_n_long);
+  RUN_TEST(option_n_rejects_path);
+  RUN_TEST(option_n_rejects_empty);
   RUN_TEST(option_p_short);
   RUN_TEST(option_p_long);
   RUN_TEST(option_U_short);

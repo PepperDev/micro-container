@@ -2,6 +2,7 @@
 #include "net/netlink.h"
 #include <sys/socket.h>
 #include <string.h>
+#include <errno.h>
 #include <arpa/inet.h>
 #include <linux/veth.h>
 
@@ -195,6 +196,34 @@ static struct nlattr *find_nlattr(struct nlattr *a, int alen, int type)
   return NULL;
 }
 
+static void test_fill_addr_zero_prefix(void)
+{
+  char buf[128];
+  int r = netlink_fill_addr(buf, sizeof(buf), 10, 0, 0xC0A80001);
+  ASSERT_EQ(r, 0);
+
+  struct nlmsghdr *h = (struct nlmsghdr *)buf;
+  struct ifaddrmsg *ifa = (struct ifaddrmsg *)NLMSG_DATA(h);
+  ASSERT_EQ(ifa->ifa_prefixlen, 0);
+  struct nlattr *a = (struct nlattr *)((char *)ifa + NLMSG_ALIGN(sizeof(*ifa)));
+  int alen = (int)NLMSG_PAYLOAD(h, sizeof(*ifa));
+  ASSERT_NOT_NULL(find_nlattr(a, alen, IFA_LOCAL));
+  ASSERT(find_nlattr(a, alen, IFA_BROADCAST) == NULL);
+}
+
+static void test_fill_addr_negative_prefix(void)
+{
+  char buf[128];
+  int r = netlink_fill_addr(buf, sizeof(buf), 10, -1, 0xC0A80001);
+  ASSERT_EQ(r, 0);
+
+  struct nlmsghdr *h = (struct nlmsghdr *)buf;
+  struct ifaddrmsg *ifa = (struct ifaddrmsg *)NLMSG_DATA(h);
+  struct nlattr *a = (struct nlattr *)((char *)ifa + NLMSG_ALIGN(sizeof(*ifa)));
+  int alen = (int)NLMSG_PAYLOAD(h, sizeof(*ifa));
+  ASSERT(find_nlattr(a, alen, IFA_BROADCAST) == NULL);
+}
+
 static int peer_net_ns_fd(const void *buf, uint32_t *out)
 {
   struct nlmsghdr *h = (struct nlmsghdr *)buf;
@@ -375,6 +404,13 @@ static void test_fill_create_veth_buffer_too_small(void)
   ASSERT_EQ(r, -1);
 }
 
+static void test_fill_create_veth_nest_no_room(void)
+{
+  char buf[50];
+  int r = netlink_fill_create_veth(buf, sizeof(buf), "cage-veth0", "eth0", 7);
+  ASSERT_EQ(r, -1);
+}
+
 static void test_fill_dump_link(void)
 {
   char buf[128];
@@ -460,6 +496,61 @@ static void test_max_veth_id_crafted(void)
   ASSERT_EQ(id, 5);
 }
 
+static void ack_err(char *buf, size_t *len, int err)
+{
+  memset(buf, 0, 64);
+  struct nlmsghdr *h = (struct nlmsghdr *)buf;
+  h->nlmsg_len = NLMSG_LENGTH(sizeof(struct nlmsgerr));
+  h->nlmsg_type = NLMSG_ERROR;
+  struct nlmsgerr *e = (struct nlmsgerr *)NLMSG_DATA(h);
+  e->error = err;
+  *len = h->nlmsg_len;
+}
+
+static void test_ack_result_short(void)
+{
+  char buf[8];
+  memset(buf, 0, sizeof(buf));
+  ASSERT_EQ(netlink_ack_result(buf, 0), -1);
+  ASSERT_EQ(netlink_ack_result(buf, NLMSG_HDRLEN - 1), -1);
+}
+
+static void test_ack_result_truncated_error(void)
+{
+  char buf[64];
+  size_t len;
+  ack_err(buf, &len, 0);
+  struct nlmsghdr *h = (struct nlmsghdr *)buf;
+  h->nlmsg_len = NLMSG_HDRLEN;
+  ASSERT_EQ(netlink_ack_result(buf, NLMSG_HDRLEN), -1);
+}
+
+static void test_ack_result_ok(void)
+{
+  char buf[64];
+  size_t len;
+  ack_err(buf, &len, 0);
+  ASSERT_EQ(netlink_ack_result(buf, len), 0);
+}
+
+static void test_ack_result_err(void)
+{
+  char buf[64];
+  size_t len;
+  ack_err(buf, &len, -EEXIST);
+  ASSERT_EQ(netlink_ack_result(buf, len), -1);
+}
+
+static void test_ack_result_non_error(void)
+{
+  char buf[64];
+  memset(buf, 0, sizeof(buf));
+  struct nlmsghdr *h = (struct nlmsghdr *)buf;
+  h->nlmsg_len = NLMSG_HDRLEN;
+  h->nlmsg_type = NLMSG_DONE;
+  ASSERT_EQ(netlink_ack_result(buf, NLMSG_HDRLEN), 0);
+}
+
 SUITE(netlink)
 {
   RUN_TEST(request_len);
@@ -472,6 +563,8 @@ SUITE(netlink)
   RUN_TEST(fill_addr);
   RUN_TEST(fill_addr_buffer_too_small);
   RUN_TEST(fill_addr_with_broadcast);
+  RUN_TEST(fill_addr_zero_prefix);
+  RUN_TEST(fill_addr_negative_prefix);
   RUN_TEST(fill_up);
   RUN_TEST(fill_default_route);
   RUN_TEST(fill_default_route_buffer_too_small);
@@ -481,10 +574,16 @@ SUITE(netlink)
   RUN_TEST(fill_default_route6_buffer_too_small);
   RUN_TEST(fill_create_veth);
   RUN_TEST(fill_create_veth_buffer_too_small);
+  RUN_TEST(fill_create_veth_nest_no_room);
   RUN_TEST(fill_dump_link);
   RUN_TEST(fill_dump_link_small_buf);
   RUN_TEST(find_ifname);
   RUN_TEST(max_veth_id);
   RUN_TEST(alloc_veth_id);
   RUN_TEST(max_veth_id_crafted);
+  RUN_TEST(ack_result_short);
+  RUN_TEST(ack_result_truncated_error);
+  RUN_TEST(ack_result_ok);
+  RUN_TEST(ack_result_err);
+  RUN_TEST(ack_result_non_error);
 }

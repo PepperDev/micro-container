@@ -315,6 +315,20 @@ When modifying fork/cleanup code in `cage.c` or `prep.c`, check:
 - After `signal_cleanup(*clean)` + `*clean = -1`, verify no subsequent error
   path holds a stale `root` pointer.
 
+### pidfile: reject out-of-range PIDs on read
+
+- **Risk**: `parse_pid()` accepted any `strtol` result below `ERANGE`, and
+  `readpid()` narrowed `long` to `pid_t`. A poisoned or truncated pidfile
+  containing `0`, a negative value, or a value above `INT_MAX` (which wraps on
+  32-bit) could make callers treat it as valid and call `kill(0, ...)`,
+  signalling the whole process group.
+- **Prevention**: `parse_pid()` rejects `pid <= 0 || pid > INT_MAX`. Covered by
+  `readpid_zero_rejected`, `readpid_negative_rejected` and
+  `readpid_overflow_rejected` in `tests/test_proc.c`. Any new pidfile reader
+  must keep the same range guard before narrowing the type.
+- **Recurrence likelihood**: Medium — the pidfile is trusted input in most
+  code paths.
+
 ### pidfile: open before fork, write after fork
 
 The pidfile is opened with `O_EXCL` **before** `fork init process`, and the
@@ -762,11 +776,8 @@ When modifying GUI mount code, check:
 
 Correct pattern (current implementation in `gui.c`):
 ```c
-static int mkparent(const char *path, uid_t uid, gid_t gid)
-{
-  /* ... strip basename ... */
-  return io_mkdir_own(buf, uid, gid, 0755);  // chowns all created parents
-}
+/* intermediates stay 0:0; only the final directory belongs to the guest */
+return io_mkdir_parents_at(rootfd, parent_rel, uid, gid, 0755);
 ```
 
 ### pidfd close must release flock via close_pid, not close
@@ -812,12 +823,16 @@ Common mistakes:
 When modifying code that resolves the host user's home, check:
 - Does the code use `getenv("SUDO_HOME")` first, then fallback to `getenv("HOME")`?
 - Is the resolved home used for host-side paths (bind mounts, cookie lookup) vs guest-side paths?
+- Is the value validated before use? It feeds a bind-mount source, so it must be
+  an absolute path with no `..` component that names an existing directory;
+  otherwise treat it as absent (`resolve_host_home()` → `host_home = NULL`).
 
 Correct pattern:
 ```c
 const char *host_home = getenv("SUDO_HOME");
 if (!host_home)
   host_home = getenv("HOME");
+/* then validate: absolute, no "..", existing directory, else NULL */
 ```
 
 ### Guest home resolution: check -e HOME before user->home
@@ -1134,7 +1149,7 @@ cgroup_cleanup(st->cg_pid, st->cg_fs_type);
 - **Risk**: `env_set_gui_envs` synthesised `:<n>.0` from the resolved socket
   number even when the host `$DISPLAY` was non-empty, silently changing the
   user's display (e.g. `:0` became `:0.0`). The spec ([§Environment
-  Variables](lifecycle.md#environment-variables), [§Re-entry
+  Variables](lifecycle.md#environment-variable-precedence), [§Re-entry
   Flow](lifecycle.md#re-entry-flow-joining-existing-instance) rule 5) requires
   the host value to be passed through unchanged; `:N.0` is only the fallback
   when host `$DISPLAY` is empty/unparseable and the socket was auto-discovered.
@@ -1153,7 +1168,7 @@ cgroup_cleanup(st->cg_pid, st->cg_fs_type);
   `{DISPLAY, XDG_RUNTIME_DIR}` while the first entry yielded `{DISPLAY}`,
   violating [§Re-entry Flow](lifecycle.md#re-entry-flow-joining-existing-instance)
   rule 5 ("the same GUI environment variables as a first-entry `-G` run") and
-  [§Environment Variables](lifecycle.md#environment-variables)
+  [§Environment Variables](lifecycle.md#environment-variable-precedence)
   (`XDG_RUNTIME_DIR` is set only when a Wayland or pulse socket is detected).
 - **Prevention**: every GUI env var on both first entry and re-entry must
   come from the socket-gated flow (`child_setup_gui` → `apply_gui_env` →
@@ -1188,6 +1203,102 @@ cgroup_cleanup(st->cg_pid, st->cg_fs_type);
 - **Prevention**: every object group has a `*_DEPS := $(<group>_OBJS:.o=.d)` variable and its own `-include` next to `$(DEPS)`/`$(COV_DEPS)`/`$(TEST_DEPS)` (Makefile:148-150). When adding a new object directory or rule, wire its depfiles in the same commit; verify by `touch`ing a shared header and checking the expected objects appear in `make -n`.
 - **Recurrence likelihood**: Medium — the failure is silent (only `.c` edits trigger rebuilds, `make -n` looks idle), so a new object group can repeat it unnoticed.
 
+### Credential reads must be checked before the privilege decision
+
+- **Risk**: `getresuid()`/`getresgid()` return values were discarded, leaving
+  uninitialized locals to feed `super_escalate()`'s escalation decision. A
+  failed read silently becomes "not root" or, worse, a stale value drives the
+  setuid path.
+- **Prevention**: check every credential read and abort with a diagnostic
+  (`get_ids()` in `src/main.c`). No test seam exists for `main.c`, so this is
+  verified by inspection; the rule applies to any future `getresuid`/`getreuid`
+  call before a privilege change.
+- **Recurrence likelihood**: Medium — these calls "cannot fail" in practice, so
+  their returns are habitually dropped.
+
+### setreuid/setregid results are checked before the self-heal continues
+
+- **Risk**: `super_escalate()` called `setreuid(0, 0)` / `setregid(0, 0)` and
+  ignored the results, so under `no_new_privs` or a capability-dropped
+  container it continued to `super_fix()` as though it were fully root.
+- **Prevention**: `drop_saved_ids()` checks both returns and aborts with a
+  diagnostic. Both calls go through the `sys_setreuid`/`sys_setregid` wrappers
+  so the failure paths are unit-tested (`tests/test_super.c`).
+- **Recurrence likelihood**: Medium — same dropped-return habit as the
+  credential reads.
+
+### `argv[optind - 1]` does not identify a `--` separator
+
+- **Risk**: `cfg->has_dashdash = (optind > 1 && strcmp(argv[optind - 1],
+  "--") == 0)` also fires when `--` was consumed as an option's argument
+  (`cage -a --`), so a run with no command launched the default shell instead
+  of reporting "no command specified" — a silent behavior change.
+- **Prevention**: derive the separator from getopt's progression, not from the
+  token after the parse. Track `prev = optind` after each successful option;
+  a real separator is the case where the loop stopped one step later at the
+  same token (`optind == prev + 1 && argv[prev] == "--"`). Covered by
+  `test_dash_dash_as_option_arg`, `test_dash_dash_as_option_arg_then_separator`,
+  `test_dash_dash_after_flag`, `test_dash_dash_bare`.
+- **Recurrence likelihood**: Medium — post-hoc `argv[optind - 1]` inspection is
+  a common shortcut that collides with option arguments.
+
+### Never interpolate a path into a shell command
+
+- **Risk**: `popen("%s \"%s\"", prog, path)` ran the decompressor through
+  `/bin/sh`, so a `"`, `$` or backtick in the module path (which comes from
+  `modules.dep`, a file cage reads as root) became command execution — the
+  double quotes rejected the intended value only until the first quote.
+- **Prevention**: run the filter with `fork` + `execp` and an explicit `argv`
+  (`spawn_filter()`/`exec_filter()` in `src/pkg/modload.c`), never a shell.
+  Validate or constrain the path where possible, but argv construction is the
+  load-bearing fix. Covered by `test_load_module_path_xz_no_shell`, which puts a
+  `"; touch …` sequence in the module name and asserts the sentinel is absent.
+- **Recurrence likelihood**: Medium — shell-out sites look convenient and the
+  quoting mistake is invisible without a hostile filename.
+
+### Numeric ids parsed from CLI/user input must be range-checked
+
+- **Risk**: `(uid_t) strtoul(s, NULL, 10)` narrows silently: `"4294967296"`
+  wraps to `0`, so a request for an out-of-range uid quietly becomes **root**
+  (`-u 4294967296` ran as uid 0). `ERANGE` is also discarded.
+- **Prevention**: parse through a checked helper that rejects `ERANGE`, trailing
+  garbage, and any value above `UINT32_MAX` (`parse_id()` /
+  `store_identity()` / `parse_one_token()` in `src/user/user_parse.c`), and
+  propagate the error so `user_new()` returns `NULL`. Covered by
+  `test_uid_overflow_rejected`, `test_uid_way_overflow_rejected`,
+  `test_gid_overflow_rejected`, `test_uid_max_accepted`.
+- **Recurrence likelihood**: Medium — every `strtoul`/`atoi` that feeds an id
+  repeats the truncation.
+
+### Privileged mounts must refuse a symlinked mount point
+
+- **Risk**: the ext4 loopback mount point (`lp->loopdir`) is derived from the
+  appdir and mounted as root before any `CLONE_NEWNS`. A symlink swapped in at
+  that path redirects the privileged `mount` to its target, giving an
+  unprivileged caller control over what the kernel mounts onto.
+- **Prevention**: immediately before mounting, `lstat` the path and refuse it
+  unless it is a real directory (`require_real_dir()` in
+  `src/sandbox/ext4fix.c`, backed by `sys_isdir_nofollow()`), so a symlink or
+  non-directory aborts the run. Covered by
+  `test_handle_same_fs_symlink_loopdir_fails`.
+- **Recurrence likelihood**: Medium — any future `mount`/create on a
+  caller-influenced path needs the same check.
+
+### Path-based xattr writes on attacker-writable paths must be fd-based
+
+- **Risk**: `acl_set()` runs on socket paths under world-writable
+  `/tmp/.X11-unix/` and on bind-mounted guest paths. A `stat(path)` followed by
+  `setxattr(path, …)` follows symlinks, so a local attacker can swap a symlink
+  in between the two calls (TOCTOU) and have root write an ACL to an arbitrary
+  file. `-e PULSE_COOKIE=../../root/x` is the same escape through the guest path.
+- **Prevention**: open the target once with `O_PATH` and use `fsetxattr` on that
+  fd. When the path must not be a symlink, open it with `SYS_OPEN_NOFOLLOW`
+  (`sys_open_rdonly()`), which uses `O_PATH|O_NOFOLLOW` to refuse following the
+  final component and rejects the path if it is itself a symlink. Covered by
+  `test_acl_set_symlink_rejected` and `test_acl_set_fd_success`.
+- **Recurrence likelihood**: Medium — any new path-based metadata write on a
+  shared directory repeats the race.
+
 ### Existence checks on possibly-symlinked paths must use lstat
 
 - **Risk**: `io_exists()` uses `access()` and `stat()` follows symlinks,
@@ -1206,6 +1317,24 @@ cgroup_cleanup(st->cg_pid, st->cg_fs_type);
 - **Recurrence likelihood**: Medium — the follow-symlink behavior of
   `access()`/`stat()` is silent and any new probe of a user-influenced
   path can repeat it.
+
+### Pre-chroot appdir creation must walk from an O_NOFOLLOW root fd
+
+- **Risk**: the GUI pre-chroot helpers created guest directories and touched
+  files by absolute path (`io_mkdir_own`/`io_touch` + `mkparent`). The appdir is
+  root-writable and its ancestors are caller-influenced, so a symlink planted at
+  any component made the privileged `mkdir`/`chown`/`open` land outside the
+  sandbox root.
+- **Prevention**: `io_mkdir_own_at()`/`io_touch_at()`
+  (`src/util/io_at.c`) take an `O_NOFOLLOW|O_DIRECTORY` fd on the sandbox root
+  and walk the relative path component by component: each intermediate is
+  `fstatat(AT_SYMLINK_NOFOLLOW)`-checked and must be a real directory before it
+  is descended with `openat(O_NOFOLLOW|O_DIRECTORY)`. `src/sandbox/gui.c`
+  (`mount_file`, `ensure_guest_home`, `prepare_cookie_dirs`) is rewired to these.
+  Covered by `setup_gui_home_symlink_rejected`, `mkdir_own_at_rejects_symlink`,
+  `touch_at_rejects_symlink` and `touch_at_rejects_symlink_leaf`.
+- **Recurrence likelihood**: Medium — every new privileged create under a
+  caller-influenced path must use the fd-relative helper, not a path string.
 
 ### Liveness probes must not trust kill(pid, 0) alone — zombies answer it
 
@@ -1422,6 +1551,31 @@ cgroup_cleanup(st->cg_pid, st->cg_fs_type);
 - **Recurrence likelihood**: Medium — the construct is natural to write and the
   resulting failure looks like an unrelated flaky format check.
 
+### Samefs loopback must key on ancestry, not just the filesystem device
+
+- **Risk**: the ext4-loopback relocation is needed only when the appdir lands
+  *inside the lowerdir tree* and on the *same filesystem*. Comparing only
+  `st_dev` (the old logic compared the lowerdir device with the appdir's
+  grandparent) forces a loopback for two harmless layouts: (a) the appdir is a
+  **sibling** of the lowerdir on the same filesystem (`-l /srv/lower -a
+  /srv/app`), and (b) the appdir already sits on its **own mount** under the
+  lower tree (a tmpfs mounted at `/srv/lower/app`). In both cases OverlayFS
+  works without a loopback, so the relocation silently moves the user's appdir.
+  The ancestry test alone is not enough either — an appdir that is *not* inside
+  the lower tree but is itself on an overlayfs still needs a loopback, because
+  OverlayFS cannot nest.
+- **Prevention**: detection needs both an ancestry test
+  (`path_is_parent(lowerdir, appdir_closest_existing)`) and the device
+  comparison, plus the overlayfs check for the non-ancestor case; only
+  same-fs *and* inside-the-tree, or an ordinary-fs sibling on overlayfs,
+  triggers the loopback. See lifecycle.md §Samefs / Ext4 Loopback Flow rule 1.
+  Covered by `test_same_fs_detect_lower_not_parent`,
+  `test_same_fs_detect_lower_parent_same_fs` and the `e2e/appdir.sh`
+  sibling/own-mount/empty-lower/full-lower cases.
+- **Recurrence likelihood**: Medium — "same filesystem" reads as sufficient
+  on its own, and the extra loopback still runs successfully, so the regression
+  is a silent relocation rather than a failure.
+
 ### A green host `gcc` build does not cover the release toolchains
 
 - **Risk**: the build CI compiles with the distro `gcc` (newer kernel UAPI
@@ -1457,6 +1611,263 @@ cgroup_cleanup(st->cg_pid, st->cg_fs_type);
   x86_64 host. See Past Incidents §release rpm cross-build.
 - **Recurrence likelihood**: Medium — the spec looks correct and the failure
   only appears for a foreign arch, masquerading as a toolchain error.
+
+### A path-interpolated CLI value must be a single path element
+
+- **Risk**: an option value spliced into a filesystem path — `-n` into
+  `/run/cage/${name}.pid` and `/var/lib/cage/app-${name}`, or `-v`'s container
+  target joined onto the sandbox root by `mem_path` — lets `/` or `..` escape
+  the base. Those paths are created and unlinked as root, so the escape happens
+  with privilege.
+- **Prevention**: reject a relative path with a `..` component at parse time —
+  the shared rule lives in `mem_path_escapes()` (`src/util/mem.h`) so every
+  caller enforces it identically. `-n` is validated even more strictly (empty
+  or `/` rejected) because it is one path element, not a path. Document the
+  constraint next to the option. Apply the rule to every future option whose
+  value is concatenated into a path, and to any value read from a file that
+  ends up in one.
+- **Recurrence likelihood**: Medium — each consumer looks correct on its own
+  and the defect only appears with a hostile argument.
+
+### Guest paths derived from the environment are attacker input
+
+- **Risk**: pre-chroot, as root, cage creates and chowns directories under the
+  sandbox root from values the caller controls (`HOME`, `XDG_RUNTIME_DIR`,
+  `PULSE_COOKIE`, `SUDO_HOME`). `-e HOME=../../root/.ssh` turned into a host
+  directory outside the root, owned by the requested uid.
+- **Prevention**: treat every guest-relative path as untrusted input: reject a
+  `..` component with `mem_path_escapes()` before joining it onto the root —
+  both where the path is consumed (`prepare_cookie_dirs`, `ensure_guest_home`)
+  and at the entry point that takes the env-derived home (`setup_gui_mounts`).
+  A lexical check is necessary but not sufficient on its own: a symlink inside
+  a root-writable directory still escapes, so the `O_NOFOLLOW` root-fd work in
+  the `src/util/io.c` TODO is the complementary half.
+- **Recurrence likelihood**: Medium — the join looked safe because `/` is
+  stripped, which does nothing about `..`.
+
+### A transformation that grows the output needs a capacity, checked worst-case
+
+- **Risk**: `build_subtree_value` padded each controller name with a space and a
+  `+`, writing two bytes per input byte, but guarded with `len + 2 >= 256` —
+  the size of the input, not the output. A 253-byte `cgroup.controllers` line
+  wrote up to 508 bytes into the callers' `char val[256]`
+  (`src/sandbox/cgroup.c`, `src/sandbox/cgroup_setup.c`), a stack overflow.
+- **Prevention**: take the output capacity as a parameter and reject against the
+  worst-case expanded length *before* writing: `2 * len + 2 > cap` (`1` leading
+  `+`, up to `2 * len` body, `1` NUL). Pass `sizeof(val)` at each call site.
+  Covered by `build_subtree_all_spaces_fits` (boundary accepted) and
+  `build_subtree_overflow_rejected`.
+- **Recurrence likelihood**: Medium — any expand-and-write helper must bound on
+  the expanded size, and the guard is easy to write against the wrong length.
+
+### Buffers returned to string consumers must be NUL-terminated
+
+- **Risk**: `io_read` returned a length-delimited buffer with no terminator, yet
+  callers scanned it as a C string — `has_real_ns_in_content(b.data)` and the
+  `strchr`/`strstr` in `src/sandbox/setup.c`, `src/sandbox/cgroup.c`,
+  `src/sandbox/cgroup_setup.c`. A file whose content filled the allocation (or
+  any file read without a trailing NUL) made those scans read past `b->len` into
+  uninitialized heap.
+- **Prevention**: terminate in `read_file` — grow one byte and set
+  `b->data[b->len] = '\0'`, so every `io_read` result is a valid C string.
+  Callers that defensively grew-and-terminated themselves (`pid_zombie`,
+  `env_read_pid_environ`) drop the now-redundant step. Covered by
+  `read_small` (`strlen(b.data) == b.len`) and `read_empty`
+  (`b.data[0] == '\0'`).
+- **Recurrence likelihood**: Medium — a length-delimited buffer handed to string
+  code is a silent out-of-bounds read.
+
+### Never read errno after a successful call
+
+- **Risk**: `scan_loop_devices` tested `sys_loop_get_stat(fd) == 0 || errno ==
+  ENXIO` and then re-read `errno` to decide. `errno` is only meaningful after a
+  call that failed, so a stale `ENXIO` left by an unrelated earlier call made a
+  *busy* loop device look free — cage would then claim it and clobber another
+  user's loop.
+- **Prevention**: branch on the return value first and only then consult `errno`:
+  `if (sys_loop_get_stat(fd) < 0 && errno == ENXIO)`. Covered by
+  `scan_loop_devices_stale_errno`.
+- **Recurrence likelihood**: Medium — `errno` is silently sticky and reads
+  naturally after a call, successful or not.
+
+### Decode a netlink reply only after validating its length
+
+- **Risk**: `netlink_send_ack` cast the received buffer to `struct nlmsghdr`
+  and read `nlmsg_type`/`nlmsgerr.error` with no length check, so a short or
+  empty `recv` (a truncated or hostile reply) made it read uninitialized stack.
+  The `nft` ACK drain decoded the same way (`nft_ack_errno` had no length).
+- **Prevention**: reject `alen < NLMSG_HDRLEN` and require `NLMSG_OK`, and
+  before reading the error require `nlmsg_len >= NLMSG_LENGTH(sizeof(struct
+  nlmsgerr))`. `netlink_ack_result()` centralises this; `nft_ack_errno()` takes
+  the received length. Covered by `ack_result_short`,
+  `ack_result_truncated_error`, `ack_result_ok`, `ack_result_err`,
+  `ack_result_non_error`.
+- **Recurrence likelihood**: Medium — netlink replies are length-delimited and
+  the header cast looks harmless.
+
+### A header walker must bounds-check every optional field
+
+- **Risk**: the gzip header walker advanced the offset past optional fields
+  without confirming they fit: `skip_fextra` added `2 + xlen` unchecked, so a
+  large `XLEN` pushed the offset past the buffer and the next header read ran out
+  of bounds; `skip_string` did `(*o)++` even when the loop stopped at the end
+  with no NUL, ending one past the buffer; and the FHCRC skip (`*o += 2`) had no
+  check at all.
+- **Prevention**: bound every advance against `in_len` through one `advance()`
+  helper; `skip_string` only consumes the NUL when it actually found one
+  (returns -1 otherwise). Covered by `decompress_gzip_extra_truncated`,
+  `decompress_gzip_name_unterminated`, `decompress_gzip_hcrc_truncated`.
+- **Recurrence likelihood**: Medium — every new optional field is another
+  unchecked offset step.
+
+### Shift counts from parsed input must be range-checked
+
+- **Risk**: `fill_addr_attrs` computed the broadcast mask as `1u << (32 -
+  prefix)`. Its guard only excluded `prefix >= 31`, so `prefix == 0` shifted by
+  32 (undefined behaviour) and a negative prefix shifted by more than the width,
+  both UB that a caller could reach through `-a`/`-A` parsing.
+- **Prevention**: reject the whole unusable range up front — `prefix <= 0 ||
+  prefix >= 31` skips the broadcast attribute. Covered by
+  `fill_addr_zero_prefix` and `fill_addr_negative_prefix`.
+- **Recurrence likelihood**: Medium — a mask or shift derived from a parsed
+  prefix is easy to widen out of range.
+
+### A wait that reports "no child" must not leave status unread
+
+- **Risk**: `pidwait` returns `0` on `ECHILD` without writing its `status`
+  out-parameter, yet callers declared `int status;` and decoded it
+  (`exit_code_from_status(status)` in `src/core/cage.c`, `st == 0` in
+  `src/core/prep.c`) or read it after a bare `waitpid` (`src/core/super.c`).
+  An uninitialized stack read decided the exit code.
+- **Prevention**: initialise the status to `0`, check the wait's return before
+  decoding, and retry on `EINTR` (`pidwait` loops on `EINTR`; `super.c`'s
+  `wait_exit_ok` does the same for the raw `waitpid`). Covered by
+  `pidwait_echild` asserting `pidwait` leaves a sentinel status untouched.
+- **Recurrence likelihood**: Medium — a wait helper that succeeds without an
+  event is easy to decode blindly.
+
+### A copy into a fixed buffer must reject truncation
+
+- **Risk**: `resolve_script` validated `script` with `access()` but then copied
+  it with `snprintf(buf, size, "%s", script)` and ignored the result. When
+  `script` was longer than `size` the buffer held a different, truncated prefix
+  while the function still reported success — callers then ran the wrong path.
+- **Prevention**: check `snprintf` returns and reject `n < 0 || (size_t) n >=
+  size`. Covered by `resolve_script_truncated`.
+- **Recurrence likelihood**: Medium — `snprintf` truncation is silent and its
+  return value is easy to discard.
+
+### A builder that can fail must report the failure to its caller
+
+- **Risk**: `appdir.c`'s `join()` returned silently when the joined path did not
+  fit, and `set_dir()` had no way to observe it, so `resolve_appdir` returned 0
+  with `upperdir`/`workdir` left as empty strings — a privileged overlay mount
+  would then run with an empty upper/work dir.
+- **Prevention**: `join()` returns -1 on overflow, `set_dir()` propagates it, and
+  `resolve_appdir()` checks each call. Covered by `join_overflow_rejected`.
+- **Recurrence likelihood**: Medium — a `void` builder that fails silently is
+  easy to miss when the caller assumes a populated buffer.
+
+### Guest paths copied with snprintf must reject truncation
+
+- **Risk**: the XDG helper formatted `guest_xrd` and the socket name with
+  `snprintf` into fixed buffers and ignored the result. A long `XDG_RUNTIME_DIR`
+  (or Wayland name) was silently truncated and the prefix was then used as an
+  mkdir/bind target — creating or mounting at the wrong guest path.
+- **Prevention**: every copy is checked through a `fits(n, sz)` helper;
+  `fill_xdg`, `ensure_wayland_target` and `pulse_target` fail (NULL/-1) when the
+  formatted string would not fit. Covered by `setup_gui_xdg_truncated`.
+- **Recurrence likelihood**: Medium — user-supplied env values copied into fixed
+  buffers silently truncate.
+
+### Do not append into a fixed buffer without a capacity check
+
+- **Risk**: `nft.c`'s batch builder did `memcpy(b->data + b->len, msg, mlen)`
+  into a fixed 768-byte `struct nft_batch` with no bound, so an oversized batch
+  would smash the stack. The local request structs were also fixed-size but had
+  no guard.
+- **Prevention**: `nft_batch_msg` refuses a message that would not fit
+  (`b->len + NLMSG_ALIGN(mlen) > sizeof(b->data)`), `nft_batch_end` refuses the
+  trailer likewise, and the builders return `int` so `nft_build`/`nft_setup_family`
+  fail the batch. The append bound is defensive: current static content is well
+  under the buffer, so no unit test reaches the branch.
+- **Recurrence likelihood**: Medium — appending to a fixed buffer without a bound
+  is a recurring class.
+
+### Attribute writers that take a buffer must take a capacity
+
+- **Risk**: `netlink_nest_start` wrote an `nlattr` header at `buf + *off` with no
+  capacity argument, unlike its sibling `netlink_put_string` which enforces
+  `cap`. A nested veth message on a small buffer wrote past the end.
+- **Prevention**: `netlink_nest_start` now takes `cap`, returns `-1` when the
+  header does not fit and reports the start offset through an out-parameter;
+  callers in `rtnl.c` propagate the error, and the raw `ifinfomsg` memset that
+  followed it is now behind `put_ifinfomsg_zero`, which also checks `cap`.
+  Covered by `fill_create_veth_nest_no_room`.
+- **Recurrence likelihood**: Medium — asymmetric helpers where one sibling checks
+  `cap` and another does not.
+
+### Kernel-provided files must be opened, not created
+
+- **Risk**: `write_pid` opened `cgroup.procs` with `O_WRONLY | O_CREAT, 0644`,
+  so a missing file — wrong path, controller without a procs file, mock root in
+  a test — was created as an ordinary regular file and the write "succeeded"
+  without the process ever entering a cgroup. The write itself was an unchecked
+  `dprintf`, so a short or failed write also reported success.
+- **Prevention**: open kernel-managed files (`cgroup.procs`,
+  `cgroup.subtree_control`, pidfiles locked elsewhere) with `O_WRONLY` only and
+  let the open fail when the object is absent; format into a stack buffer and
+  check both `snprintf` and `write` before returning 0. Covered by
+  `write_pid_missing_rejected` and `write_pid_success` in `tests/test_cgroup.c`,
+  whose fixtures seed `cgroup.procs` instead of relying on creation.
+- **Recurrence likelihood**: Medium — "open for writing" naturally reaches for
+  `O_CREAT`, and the unchecked-write habit recurs with every new file writer.
+
+### `fsetxattr` fails on `O_PATH` fds; sockets can only be opened `O_PATH`
+
+- **Risk**: `acl_set_fd` opened the target with `O_PATH|O_NOFOLLOW` (race-free
+  identity, symlinks refused) and then called `fsetxattr`. The kernel rejects
+  `fsetxattr` on an `O_PATH` fd with `EBADF`, and a unix socket cannot be
+  opened any other way (`open(..., O_RDONLY)` returns `ENXIO`), so the ACL was
+  never applied whenever it was actually needed. X11 sockets owned by root or
+  another user made GUI setup fail with `cage: GUI setup failed`.
+- **Prevention**: keep the `O_PATH` open and set the xattr through the magic
+  link `/proc/self/fd/<fd>` (`sys_setxattr`), which resolves to the pinned
+  inode and cannot be redirected by swapping the path. Verified by
+  `e2e/gui_x11.sh` g4 (other-owner socket) and g6 (root-owned socket
+  discovered from `/tmp/.X11-unix`).
+- **Recurrence likelihood**: Medium — fd-based xattr hooks look usable but
+  `O_PATH` has a narrow syscall allowlist.
+
+### A command user created by `--initscript` must be re-resolved afterwards
+
+- **Risk**: the container child resolved the guest `user_t` before running the
+  init script, then used the same instance for the command. A user or group
+  that the init script created (`adduser`/`addgroup`) was invisible, so `-u
+  carol` silently fell back to `nobody` and `-g gonly`/`<gid>:<name>` fell
+  back to root.
+- **Prevention**: after `do_init`, create a fresh guest `user_t` rooted at `/`
+  and eagerly resolve it (`reread_guest_user`) before `child_run`; the GUI
+  context still uses the pre-init user because it is built before the chroot.
+  Covered by `e2e/identity.sh` n4 (user + complementary groups) and n5/n6
+  (named primary/complementary groups).
+- **Recurrence likelihood**: Medium — any reordering of setup steps silently
+  reintroduces the stale cache.
+
+### Guest HOME parents are root-owned; only the leaf belongs to the guest
+
+- **Risk**: creating a nested guest HOME (`-e HOME=/a/b/c`) through
+  `io_mkdir_own_at` chowned every created component to the guest uid, so the
+  guest could rename or replace its own ancestors. The fd-relative refactor
+  replaced the old `mkparent` (parents `0:0`, leaf `uid:gid`) and lost this.
+- **Prevention**: `io_mkdir_parents_at` creates intermediate components `0:0
+  0755` and only the leaf `uid:gid 0755`; `ensure_guest_home` and
+  `ensure_mount_target` use it, while `prepare_cookie_dirs` keeps
+  `io_mkdir_own_at` because `.config`/`.config/pulse` genuinely belong to the
+  guest. Covered by `mkdir_parents_at_chowns_only_leaf` and `e2e/pulse.sh`
+  pc12.
+- **Recurrence likelihood**: Medium — two mkdir helpers with different
+  ownership rules invite a swap.
 
 ## Code Quality Exceptions
 

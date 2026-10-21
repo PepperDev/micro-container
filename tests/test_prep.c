@@ -74,6 +74,21 @@ static void test_resolve_script_missing(void)
   mem_free(root);
 }
 
+static void test_resolve_script_truncated(void)
+{
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+  char *path = mem_path(root, "init-with-a-long-name.sh");
+  ASSERT_NOT_NULL(path);
+  write_file(path, "echo hi\n");
+
+  char buf[8];
+  ASSERT_EQ(resolve_script(path, root, buf, sizeof(buf)), -1);
+  mem_free(path);
+  test_rmtree(root);
+  mem_free(root);
+}
+
 static void test_resolve_script_host_path_as_is(void)
 {
   char *root = test_temp_root();
@@ -88,6 +103,52 @@ static void test_resolve_script_host_path_as_is(void)
   mem_free(path);
   test_rmtree(root);
   mem_free(root);
+}
+
+static void test_resolve_host_home_valid(void)
+{
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+
+  setenv("SUDO_HOME", root, 1);
+  env_t env;
+  memset(&env, 0, sizeof(env));
+  resolve_host_home(&env);
+  ASSERT_STR_EQ(env.host_home, root);
+
+  unsetenv("SUDO_HOME");
+  test_rmtree(root);
+  mem_free(root);
+}
+
+static void test_resolve_host_home_dotdot_rejected(void)
+{
+  setenv("SUDO_HOME", "/tmp/../etc", 1);
+  env_t env;
+  memset(&env, 0, sizeof(env));
+  resolve_host_home(&env);
+  ASSERT_NULL(env.host_home);
+  unsetenv("SUDO_HOME");
+}
+
+static void test_resolve_host_home_relative_rejected(void)
+{
+  setenv("SUDO_HOME", "relative/path", 1);
+  env_t env;
+  memset(&env, 0, sizeof(env));
+  resolve_host_home(&env);
+  ASSERT_NULL(env.host_home);
+  unsetenv("SUDO_HOME");
+}
+
+static void test_resolve_host_home_missing_dir_rejected(void)
+{
+  setenv("SUDO_HOME", "/nonexistent-cage-home-xyz", 1);
+  env_t env;
+  memset(&env, 0, sizeof(env));
+  resolve_host_home(&env);
+  ASSERT_NULL(env.host_home);
+  unsetenv("SUDO_HOME");
 }
 
 static void test_find_envvar_empty_is_unset(void)
@@ -118,6 +179,11 @@ SUITE(prep)
   RUN_TEST(resolve_script_relative);
   RUN_TEST(resolve_script_nested);
   RUN_TEST(resolve_script_missing);
+  RUN_TEST(resolve_script_truncated);
   RUN_TEST(resolve_script_host_path_as_is);
   RUN_TEST(find_envvar_empty_is_unset);
+  RUN_TEST(resolve_host_home_valid);
+  RUN_TEST(resolve_host_home_dotdot_rejected);
+  RUN_TEST(resolve_host_home_relative_rejected);
+  RUN_TEST(resolve_host_home_missing_dir_rejected);
 }

@@ -3,6 +3,7 @@
 #include "sandbox/acl.h"
 #include "util/io.h"
 #include "util/mem.h"
+#include "util/syscall.h"
 #include "mock.h"
 #include <unistd.h>
 #include <string.h>
@@ -117,6 +118,53 @@ static void test_acl_set_nonexistent_path(void)
   mem_free(root);
 }
 
+static void test_acl_set_symlink_rejected(void)
+{
+  mock_sys_reset();
+
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+  char *target = mem_path(root, "real");
+  int fd = create_test_sock(target);
+  ASSERT(fd >= 0);
+  close(fd);
+  char *link = mem_path(root, "link");
+  ASSERT_EQ(symlink(target, link), 0);
+
+  uid_t test_uid = (getuid() == 1000) ? 1001 : 1000;
+  ASSERT_EQ(acl_set(link, test_uid, 1000, NULL, 0), -1);
+  ASSERT_EQ(_mock_setxattr_count, 0);
+
+  mem_free(link);
+  mem_free(target);
+  test_rmtree(root);
+  mem_free(root);
+}
+
+static void test_acl_set_fd_success(void)
+{
+  mock_sys_reset();
+  _mock_setxattr_ret = 0;
+
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+  char *path = mem_path(root, "fd-sock");
+  int sfd = create_test_sock(path);
+  ASSERT(sfd >= 0);
+  int fd = sys_open_rdonly(path, 0);
+  ASSERT(fd >= 0);
+
+  uid_t test_uid = (getuid() == 1000) ? 1001 : 1000;
+  ASSERT_EQ(acl_set_fd(fd, test_uid, 1000, NULL, 0), 0);
+  ASSERT_EQ(_mock_setxattr_count, 1);
+
+  close(fd);
+  close(sfd);
+  mem_free(path);
+  test_rmtree(root);
+  mem_free(root);
+}
+
 static void test_acl_guest_set_success(void)
 {
   mock_sys_reset();
@@ -161,6 +209,8 @@ SUITE(acl)
   RUN_TEST(acl_set_calls_setxattr);
   RUN_TEST(acl_set_setxattr_fails);
   RUN_TEST(acl_set_nonexistent_path);
+  RUN_TEST(acl_set_symlink_rejected);
+  RUN_TEST(acl_set_fd_success);
   RUN_TEST(acl_guest_set_success);
   RUN_TEST(acl_guest_set_nonexistent);
 }

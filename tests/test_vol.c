@@ -119,6 +119,30 @@ static void test_parse_vol_empty_target(void)
   ASSERT_EQ(parse_vol(&v, "host:"), -1);
 }
 
+static void test_parse_vol_rejects_leading_dotdot(void)
+{
+  mock_sys_reset();
+
+  vol_t v;
+  ASSERT_EQ(parse_vol(&v, "host:/../../etc"), -1);
+}
+
+static void test_parse_vol_rejects_inner_dotdot(void)
+{
+  mock_sys_reset();
+
+  vol_t v;
+  ASSERT_EQ(parse_vol(&v, "host:/data/../../x"), -1);
+}
+
+static void test_parse_vol_rejects_bare_dotdot(void)
+{
+  mock_sys_reset();
+
+  vol_t v;
+  ASSERT_EQ(parse_vol(&v, "host:.."), -1);
+}
+
 static void test_mount_user_volume_file(void)
 {
   mock_sys_reset();
@@ -278,6 +302,9 @@ SUITE(vol)
   RUN_TEST(parse_vol_empty);
   RUN_TEST(parse_vol_empty_host);
   RUN_TEST(parse_vol_empty_target);
+  RUN_TEST(parse_vol_rejects_leading_dotdot);
+  RUN_TEST(parse_vol_rejects_inner_dotdot);
+  RUN_TEST(parse_vol_rejects_bare_dotdot);
   RUN_TEST(mount_user_volume_file);
   RUN_TEST(mount_user_volume_mount_bind_fails);
   RUN_TEST(parse_and_mount_volume);

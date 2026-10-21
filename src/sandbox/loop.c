@@ -77,11 +77,9 @@ int scan_loop_devices(void)
     int fd = try_open_loop_dev(n);
     if (fd < 0)
       continue;
-    if (sys_loop_get_stat(fd) == 0 || errno == ENXIO) {
-      if (errno == ENXIO) {
-        close(fd);
-        return n;
-      }
+    if (sys_loop_get_stat(fd) < 0 && errno == ENXIO) {
+      close(fd);
+      return n;
     }
     close(fd);
   }

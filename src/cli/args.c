@@ -98,6 +98,10 @@ static int handle_N(cage_config_t *cfg)
 
 static int handle_n(cage_config_t *cfg)
 {
+  if (optarg[0] == '\0' || strchr(optarg, '/') != NULL) {
+    fprintf(stderr, "cage: -n expects a non-empty name without '/'\n");
+    return -1;
+  }
   cfg->name = optarg;
   return 0;
 }
@@ -207,12 +211,14 @@ int cage_parse_args(cage_config_t *cfg, int argc, char **argv)
   int opt;
   optind = 1;
   opterr = 0;
+  int prev = optind;
   while ((opt = getopt_long(argc, argv, "+:a:Cc:e:Gg:hi:kl:Nn:p:U:u:Vv:w:", long_opts, NULL)) != -1) {
+    prev = optind;
     int r = handle_opt(cfg, opt, optopt, argv);
     if (r != 0)
       return r;
   }
-  cfg->has_dashdash = (optind > 1 && strcmp(argv[optind - 1], "--") == 0);
+  cfg->has_dashdash = (prev >= 1 && prev < argc && optind == prev + 1 && strcmp(argv[prev], "--") == 0);
   return collect_commands(cfg, argc, argv, optind);
 }
 

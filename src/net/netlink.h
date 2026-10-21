@@ -30,10 +30,11 @@ void netlink_request_fill(void *buf, size_t len, int type, int flags, int family
 
 int netlink_recv_dump(int fd, void *buf, size_t cap, size_t *len);
 int netlink_send_ack(int fd, const void *buf, size_t len);
+int netlink_ack_result(const void *ack, size_t alen);
 
 int netlink_put_string(void *buf, size_t cap, size_t *off, int type, const char *val);
 
-size_t netlink_nest_start(void *buf, size_t *off, int type);
+int netlink_nest_start(void *buf, size_t cap, size_t *off, int type, size_t *start);
 void netlink_nest_end(void *buf, size_t start, const size_t *off);
 
 struct net6_addr {

@@ -1,6 +1,7 @@
 #include "framework.h"
 #include "test_util.h"
 #include "util/io.h"
+#include "mock.h"
 #include <string.h>
 #include <unistd.h>
 #include <sys/stat.h>
@@ -348,6 +349,8 @@ static void test_read_small(void)
   ASSERT_EQ(io_read(path, &b), 0);
   ASSERT_EQ(b.len, 5);
   ASSERT_EQ(memcmp(b.data, "hello", 5), 0);
+  ASSERT_EQ(b.data[b.len], '\0');
+  ASSERT_EQ(strlen(b.data), 5);
   buf_free(&b);
   mem_free(path);
   test_rmtree(root);
@@ -632,6 +635,8 @@ static void test_read_empty(void)
   buf_t b = BUF_INIT;
   ASSERT_EQ(io_read(path, &b), 0);
   ASSERT_EQ(b.len, 0);
+  ASSERT_NOT_NULL(b.data);
+  ASSERT_EQ(b.data[0], '\0');
   buf_free(&b);
   mem_free(path);
   test_rmtree(root);
@@ -669,6 +674,163 @@ static void test_read_fail(void)
   ASSERT_EQ(io_read(path, &b), -1);
   buf_free(&b);
   mem_free(path);
+  test_rmtree(root);
+  mem_free(root);
+}
+
+static int open_root(const char *root)
+{
+  return open(root, O_PATH | O_DIRECTORY | O_CLOEXEC);
+}
+
+static void test_mkdir_own_at_nested(void)
+{
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+  int rfd = open_root(root);
+  ASSERT(rfd >= 0);
+
+  ASSERT_EQ(io_mkdir_own_at(rfd, "a/b/c", 0, 0, 0755), 0);
+
+  char *p = mem_path(root, "a/b/c");
+  struct stat st;
+  ASSERT_EQ(stat(p, &st), 0);
+  ASSERT(S_ISDIR(st.st_mode));
+  mem_free(p);
+
+  close(rfd);
+  test_rmtree(root);
+  mem_free(root);
+}
+
+static void test_mkdir_own_at_chowns_every_component(void)
+{
+  mock_sys_reset();
+  _mock_fchownat_ret = 0;
+
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+  int rfd = open_root(root);
+  ASSERT(rfd >= 0);
+
+  ASSERT_EQ(io_mkdir_own_at(rfd, "a/b/c", 1234, 1234, 0755), 0);
+  ASSERT_EQ(_mock_fchownat_count, 3);
+
+  close(rfd);
+  test_rmtree(root);
+  mem_free(root);
+}
+
+static void test_mkdir_parents_at_chowns_only_leaf(void)
+{
+  mock_sys_reset();
+  _mock_fchownat_ret = 0;
+
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+  int rfd = open_root(root);
+  ASSERT(rfd >= 0);
+
+  ASSERT_EQ(io_mkdir_parents_at(rfd, "a/b/c", 1234, 1234, 0755), 0);
+  ASSERT_EQ(_mock_fchownat_count, 1);
+
+  char *p = mem_path(root, "a/b/c");
+  struct stat st;
+  ASSERT_EQ(stat(p, &st), 0);
+  ASSERT(S_ISDIR(st.st_mode));
+  mem_free(p);
+
+  close(rfd);
+  test_rmtree(root);
+  mem_free(root);
+}
+
+static void test_touch_at_creates_file(void)
+{
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+  int rfd = open_root(root);
+  ASSERT(rfd >= 0);
+
+  ASSERT_EQ(io_touch_at(rfd, "dir/file", 0, 0), 0);
+
+  char *p = mem_path(root, "dir/file");
+  struct stat st;
+  ASSERT_EQ(stat(p, &st), 0);
+  ASSERT(S_ISREG(st.st_mode));
+  mem_free(p);
+
+  close(rfd);
+  test_rmtree(root);
+  mem_free(root);
+}
+
+static void test_mkdir_own_at_rejects_symlink(void)
+{
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+  char *outside = mem_path(root, "outside");
+  ASSERT_EQ(mkdir(outside, 0755), 0);
+  char *link = mem_path(root, "link");
+  ASSERT_EQ(symlink(outside, link), 0);
+  int rfd = open_root(root);
+  ASSERT(rfd >= 0);
+
+  ASSERT_EQ(io_mkdir_own_at(rfd, "link/child", 0, 0, 0755), -1);
+
+  char *p = mem_path(outside, "child");
+  struct stat st;
+  ASSERT_EQ(stat(p, &st), -1);
+  mem_free(p);
+
+  close(rfd);
+  mem_free(link);
+  mem_free(outside);
+  test_rmtree(root);
+  mem_free(root);
+}
+
+static void test_touch_at_rejects_symlink(void)
+{
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+  char *outside = mem_path(root, "outside");
+  ASSERT_EQ(mkdir(outside, 0755), 0);
+  char *link = mem_path(root, "link");
+  ASSERT_EQ(symlink(outside, link), 0);
+  int rfd = open_root(root);
+  ASSERT(rfd >= 0);
+
+  ASSERT_EQ(io_touch_at(rfd, "link/file", 0, 0), -1);
+
+  char *p = mem_path(outside, "file");
+  struct stat st;
+  ASSERT_EQ(stat(p, &st), -1);
+  mem_free(p);
+
+  close(rfd);
+  mem_free(link);
+  mem_free(outside);
+  test_rmtree(root);
+  mem_free(root);
+}
+
+static void test_touch_at_rejects_symlink_leaf(void)
+{
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+  char *outside = mem_path(root, "target");
+  ASSERT_EQ(io_touch(outside), 0);
+  char *link = mem_path(root, "leaf");
+  ASSERT_EQ(symlink(outside, link), 0);
+  int rfd = open_root(root);
+  ASSERT(rfd >= 0);
+
+  ASSERT_EQ(io_touch_at(rfd, "leaf", 0, 0), -1);
+
+  close(rfd);
+  mem_free(link);
+  mem_free(outside);
   test_rmtree(root);
   mem_free(root);
 }
@@ -724,4 +886,11 @@ SUITE(io)
   RUN_TEST(chown_missing);
   RUN_TEST(umask_effect);
   RUN_TEST(umask_restore);
+  RUN_TEST(mkdir_own_at_nested);
+  RUN_TEST(mkdir_own_at_chowns_every_component);
+  RUN_TEST(mkdir_parents_at_chowns_only_leaf);
+  RUN_TEST(touch_at_creates_file);
+  RUN_TEST(mkdir_own_at_rejects_symlink);
+  RUN_TEST(touch_at_rejects_symlink);
+  RUN_TEST(touch_at_rejects_symlink_leaf);
 }

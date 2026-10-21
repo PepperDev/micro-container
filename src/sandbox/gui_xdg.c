@@ -27,17 +27,25 @@ static int ensure_xdg_parent(const struct gui_ctx *ctx, const char *abspath)
   return r;
 }
 
-static void fill_xdg(const struct gui_ctx *ctx, char *buf, size_t sz)
+static int fits(int n, size_t sz)
 {
+  return n < 0 || (size_t)n >= sz ? -1 : 0;
+}
+
+static int fill_xdg(const struct gui_ctx *ctx, char *buf, size_t sz)
+{
+  int n;
   if (ctx->guest_xrd)
-    snprintf(buf, sz, "%s", ctx->guest_xrd);
+    n = snprintf(buf, sz, "%s", ctx->guest_xrd);
   else
-    snprintf(buf, sz, "/run/user/%u", ctx->uid);
+    n = snprintf(buf, sz, "/run/user/%u", ctx->uid);
+  return fits(n, sz);
 }
 
 static int create_guest_xdg_root(struct gui_ctx *ctx, char *buf, size_t sz)
 {
-  fill_xdg(ctx, buf, sz);
+  if (fill_xdg(ctx, buf, sz) != 0)
+    return -1;
   char *g = mem_path(ctx->root, buf);
   if (!g)
     return -1;
@@ -97,32 +105,39 @@ static const char *pulse_target(const struct gui_ctx *ctx, char *buf, size_t sz)
   const char *gp = ctx->guest_ps;
   if (gp)
     return strncmp(gp, "unix:", 5) == 0 ? gp + 5 : gp;
-  if (ctx->guest_xrd) {
-    snprintf(buf, sz, "%s/pulse/native", ctx->guest_xrd);
-    return buf;
-  }
-  snprintf(buf, sz, "run/user/%u/pulse/native", ctx->uid);
-  return buf;
+  int n;
+  if (ctx->guest_xrd)
+    n = snprintf(buf, sz, "%s/pulse/native", ctx->guest_xrd);
+  else
+    n = snprintf(buf, sz, "run/user/%u/pulse/native", ctx->uid);
+  return fits(n, sz) == 0 ? buf : NULL;
 }
 
-static int ensure_wayland_target(struct gui_ctx *ctx, const char *wn, char *t, size_t sz)
+static int ensure_target_present(struct gui_ctx *ctx, const char *t, char *xdg, size_t xdg_sz)
 {
-  char xdg[512];
-  fill_xdg(ctx, xdg, sizeof(xdg));
-  snprintf(t, sz, "%s/%s", xdg, wn);
   char *absp = mem_path(ctx->root, t);
   if (!absp)
     return -1;
   int r = io_exists(absp);
   mem_free(absp);
   if (r != 0) {
-    r = create_guest_xdg_root(ctx, xdg, sizeof(xdg));
+    r = create_guest_xdg_root(ctx, xdg, xdg_sz);
     if (r == 0)
       r = touch_target(ctx, t);
   }
   if (!ctx->xrd_created)
     ctx->xrd_created = 1;
   return r;
+}
+
+static int ensure_wayland_target(struct gui_ctx *ctx, const char *wn, char *t, size_t sz)
+{
+  char xdg[512];
+  if (fill_xdg(ctx, xdg, sizeof(xdg)) != 0)
+    return -1;
+  if (fits(snprintf(t, sz, "%s/%s", xdg, wn), sz) != 0)
+    return -1;
+  return ensure_target_present(ctx, t, xdg, sizeof(xdg));
 }
 
 static int mount_wayland(struct gui_ctx *ctx, const char *wl)
@@ -196,6 +211,10 @@ static int mount_pulse(struct gui_ctx *ctx)
   }
   char target[512];
   const char *tgt = pulse_target(ctx, target, sizeof(target));
+  if (!tgt) {
+    mem_free(src);
+    return -1;
+  }
   int r = ensure_pulse_target(ctx, tgt);
   if (r == 0)
     r = mount_file_acl(ctx, tgt, src);

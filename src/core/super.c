@@ -1,5 +1,6 @@
 #include "super.h"
 #include "util/io.h"
+#include "util/syscall.h"
 // cppcheck-suppress missingIncludeSystem
 #include <stdio.h>
 // cppcheck-suppress missingIncludeSystem
@@ -56,6 +57,18 @@ static void close_std_fds(void)
   close(2);
 }
 
+static int wait_exit_ok(pid_t pid)
+{
+  int status = 0;
+  pid_t w;
+  do {
+    w = waitpid(pid, &status, 0);
+  } while (w < 0 && errno == EINTR);
+  if (w < 0 || !WIFEXITED(status) || WEXITSTATUS(status) != 0)
+    return -1;
+  return 0;
+}
+
 static int try_sudo_reexec(char **argv)
 {
   pid_t pid = vfork();
@@ -68,9 +81,7 @@ static int try_sudo_reexec(char **argv)
     execlp("sudo", "sudo", "--", argv[0], "--fix", (char *)NULL);
     _exit(127);
   }
-  int status;
-  waitpid(pid, &status, 0);
-  if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+  if (wait_exit_ok(pid) != 0) {
     fprintf(stderr, "cage: sudo --fix failed\n");
     return -1;
   }
@@ -86,6 +97,19 @@ int is_suid_binary(void)
   return stat("/proc/self/exe", &st) == 0 && st.st_uid == 0 && st.st_gid == 0 && (st.st_mode & S_ISUID);
 }
 
+static int drop_saved_ids(uid_t ruid, gid_t egid, gid_t rgid)
+{
+  if (ruid != 0 && sys_setreuid(0, 0) != 0) {
+    fprintf(stderr, "cage: setreuid: %s\n", strerror(errno));
+    return -1;
+  }
+  if ((egid != 0 || rgid != 0) && sys_setregid(0, 0) != 0) {
+    fprintf(stderr, "cage: setregid: %s\n", strerror(errno));
+    return -1;
+  }
+  return 0;
+}
+
 int super_escalate(char **argv, uid_t euid, uid_t ruid, gid_t egid, gid_t rgid)
 {
   if (euid != 0) {
@@ -95,10 +119,8 @@ int super_escalate(char **argv, uid_t euid, uid_t ruid, gid_t egid, gid_t rgid)
     }
     return try_sudo_reexec(argv);
   }
-  if (ruid != 0)
-    setreuid(0, 0);
-  if (egid != 0 || rgid != 0)
-    setregid(0, 0);
+  if (drop_saved_ids(ruid, egid, rgid) != 0)
+    return -1;
   umask(0);
   return super_fix();
 }

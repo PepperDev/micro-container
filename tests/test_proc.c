@@ -341,6 +341,51 @@ static void test_readpid_invalid_content(void)
   mem_free(root);
 }
 
+static void test_readpid_zero_rejected(void)
+{
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+  char *pf = mem_path(root, "readpid-zero.pid");
+  int fd = open(pf, O_WRONLY | O_CREAT | O_CLOEXEC, 0644);
+  write(fd, "0", 1);
+  close(fd);
+
+  ASSERT_EQ(readpid(pf, NULL), -1);
+  mem_free(pf);
+  test_rmtree(root);
+  mem_free(root);
+}
+
+static void test_readpid_negative_rejected(void)
+{
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+  char *pf = mem_path(root, "readpid-negative.pid");
+  int fd = open(pf, O_WRONLY | O_CREAT | O_CLOEXEC, 0644);
+  write(fd, "-5", 2);
+  close(fd);
+
+  ASSERT_EQ(readpid(pf, NULL), -1);
+  mem_free(pf);
+  test_rmtree(root);
+  mem_free(root);
+}
+
+static void test_readpid_overflow_rejected(void)
+{
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+  char *pf = mem_path(root, "readpid-overflow.pid");
+  int fd = open(pf, O_WRONLY | O_CREAT | O_CLOEXEC, 0644);
+  write(fd, "9999999999", 10);
+  close(fd);
+
+  ASSERT_EQ(readpid(pf, NULL), -1);
+  mem_free(pf);
+  test_rmtree(root);
+  mem_free(root);
+}
+
 static void test_readpid_no_fd(void)
 {
   char *root = test_temp_root();
@@ -360,9 +405,13 @@ static void test_pidwait_echild(void)
   pid_t pid = pidfork();
   if (pid == 0)
     _exit(0);
-  int status;
+  int status = 0;
   ASSERT_EQ(pidwait(pid, &status), 0);
-  ASSERT_EQ(pidwait(pid, &status), 0);
+
+  /* A second wait has no child to report, so pidwait must not touch status */
+  int sentinel = 0x5eed;
+  ASSERT_EQ(pidwait(pid, &sentinel), 0);
+  ASSERT_EQ(sentinel, 0x5eed);
 }
 
 static void test_killpid_readpid_invalid(void)
@@ -504,6 +553,9 @@ SUITE(proc)
   RUN_TEST(readpid_open_fails);
   RUN_TEST(readpid_read_fails);
   RUN_TEST(readpid_invalid_content);
+  RUN_TEST(readpid_zero_rejected);
+  RUN_TEST(readpid_negative_rejected);
+  RUN_TEST(readpid_overflow_rejected);
   RUN_TEST(readpid_no_fd);
   RUN_TEST(pidwait_echild);
   RUN_TEST(killpid_readpid_invalid);

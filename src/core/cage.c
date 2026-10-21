@@ -204,13 +204,13 @@ static int wait_root_ready(volatile int *ready, pid_t child)
 
 static int finish_child(struct spawn_st *st)
 {
-  int status;
-  pidwait(st->child, &status);
+  int status = 0;
+  int r = pidwait(st->child, &status);
   unlink_pidfile(st->pidfile);
   cgroup_cleanup(st->cg_pid, st->cg_fs_type);
   user_free(st->user);
   remove_root(&st->root);
-  return exit_code_from_status(status);
+  return r != 0 ? 1 : exit_code_from_status(status);
 }
 
 static void spawn_cleanup(struct spawn_st *st)

@@ -88,6 +88,19 @@ static void test_name_overrides_default_appdir(void)
   ASSERT_STR_EQ(d.upperdir, "/custom/upper");
 }
 
+static void test_join_overflow_rejected(void)
+{
+  cage_config_t cfg;
+  memset(&cfg, 0, sizeof(cfg));
+  static char long_appdir[4094];
+  memset(long_appdir, 'a', sizeof(long_appdir) - 1);
+  long_appdir[sizeof(long_appdir) - 1] = '\0';
+  cfg.appdir = long_appdir;
+
+  appdir_t d;
+  ASSERT_EQ(resolve_appdir(&cfg, &d), -1);
+}
+
 SUITE(appdir)
 {
   RUN_TEST(defaults_no_name);
@@ -96,4 +109,5 @@ SUITE(appdir)
   RUN_TEST(custom_upper_work_lower);
   RUN_TEST(all_custom);
   RUN_TEST(name_overrides_default_appdir);
+  RUN_TEST(join_overflow_rejected);
 }

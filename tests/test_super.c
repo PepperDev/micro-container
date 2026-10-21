@@ -1,5 +1,7 @@
 #include "framework.h"
+#include "test_util.h"
 #include "core/super.h"
+#include "mock.h"
 #include <unistd.h>
 #include <sys/stat.h>
 
@@ -77,6 +79,37 @@ static void test_is_suid_binary_check(void)
   ASSERT(r == 0 || r == 1);
 }
 
+static void test_escalate_setreuid_failure(void)
+{
+  mock_sys_reset();
+  _mock_setreuid_ret = 1;
+  _mock_setreuid_count = 0;
+  _mock_chown_ret = 0;
+  _mock_chown_count = 0;
+
+  char *argv[] = { "cage", NULL };
+  ASSERT_EQ(super_escalate(argv, 0, 1000, 0, 0), -1);
+  ASSERT_EQ(_mock_setreuid_count, 1);
+  ASSERT_EQ(_mock_chown_count, 0);
+}
+
+static void test_escalate_setregid_failure(void)
+{
+  mock_sys_reset();
+  _mock_setreuid_ret = 0;
+  _mock_setregid_ret = 1;
+  _mock_setreuid_count = 0;
+  _mock_setregid_count = 0;
+  _mock_chown_ret = 0;
+  _mock_chown_count = 0;
+
+  char *argv[] = { "cage", NULL };
+  ASSERT_EQ(super_escalate(argv, 0, 1000, 0, 1000), -1);
+  ASSERT_EQ(_mock_setreuid_count, 1);
+  ASSERT_EQ(_mock_setregid_count, 1);
+  ASSERT_EQ(_mock_chown_count, 0);
+}
+
 SUITE(super)
 {
   RUN_TEST(fix_fails_when_not_root);
@@ -85,4 +118,6 @@ SUITE(super)
   RUN_TEST(escalate_succeeds_as_root);
   RUN_TEST(escalate_as_root_self_heals);
   RUN_TEST(is_suid_binary_check);
+  RUN_TEST(escalate_setreuid_failure);
+  RUN_TEST(escalate_setregid_failure);
 }

@@ -56,12 +56,24 @@ static int check_no_command(const cage_config_t *cfg)
   return 1;
 }
 
-static void get_ids(uid_t *euid, uid_t *ruid, gid_t *egid, gid_t *rgid)
+static int get_ids(uid_t *euid, uid_t *ruid, gid_t *egid, gid_t *rgid)
 {
   uid_t suid;
   gid_t sgid;
-  getresuid(ruid, euid, &suid);
-  getresgid(rgid, egid, &sgid);
+  if (getresuid(ruid, euid, &suid) != 0 || getresgid(rgid, egid, &sgid) != 0) {
+    fprintf(stderr, "cage: unable to read the process credentials\n");
+    return -1;
+  }
+  return 0;
+}
+
+static int escalate(char **argv, uid_t *ruid)
+{
+  uid_t euid;
+  gid_t egid, rgid;
+  if (get_ids(&euid, ruid, &egid, &rgid) != 0)
+    return -1;
+  return super_escalate(argv, euid, *ruid, egid, rgid);
 }
 
 int main(int argc, char **argv)
@@ -69,10 +81,8 @@ int main(int argc, char **argv)
   int r = handle_fix(argc, argv);
   if (r >= 0)
     return r;
-  uid_t euid, ruid;
-  gid_t egid, rgid;
-  get_ids(&euid, &ruid, &egid, &rgid);
-  if (super_escalate(argv, euid, ruid, egid, rgid) != 0)
+  uid_t ruid;
+  if (escalate(argv, &ruid) != 0)
     return 1;
   cage_config_t cfg;
   cage_config_init(&cfg);

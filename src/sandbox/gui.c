@@ -16,30 +16,47 @@
 // cppcheck-suppress missingIncludeSystem
 #include <errno.h>
 // cppcheck-suppress missingIncludeSystem
+#include <fcntl.h>
+// cppcheck-suppress missingIncludeSystem
 #include <string.h>
 
-static int mkparent(const char *path, uid_t uid, gid_t gid)
+static char *parent_of(const char *rel)
 {
-  const char *par = strrchr(path, '/');
-  if (!par)
-    return -1;
-  size_t len = (size_t)(par - path);
-  char buf[4096];
-  if (len >= sizeof(buf))
-    return -1;
-  memcpy(buf, path, len);
-  buf[len] = '\0';
-  if (io_mkdir_own(buf, 0, 0, 0755) != 0)
-    return -1;
-  return io_chown(buf, uid, gid);
+  const char *par = strrchr(rel, '/');
+  if (!par || par == rel)
+    return NULL;
+  size_t len = (size_t)(par - rel);
+  char *dir = mem_alloc(len + 1);
+  memcpy(dir, rel, len);
+  dir[len] = '\0';
+  return dir;
 }
 
-static int mount_file(const char *root, const char *sub, const char *src, uid_t uid, gid_t gid)
+static int open_root(const struct gui_ctx *ctx)
 {
-  char *p = mem_path(root, sub);
+  return open(ctx->root, O_PATH | O_DIRECTORY | O_CLOEXEC);
+}
+
+static int ensure_mount_target(const struct gui_ctx *ctx, const char *sub, uid_t uid, gid_t gid)
+{
+  int rootfd = open_root(ctx);
+  if (rootfd < 0)
+    return -1;
+  char *dir = parent_of(sub);
+  int r = dir ? io_mkdir_parents_at(rootfd, dir, uid, gid, 0755) : 0;
+  if (r == 0)
+    r = io_touch_at(rootfd, sub, uid, gid);
+  mem_free(dir);
+  close(rootfd);
+  return r;
+}
+
+static int mount_file(const struct gui_ctx *ctx, const char *sub, const char *src, uid_t uid, gid_t gid)
+{
+  char *p = mem_path(ctx->root, sub);
   if (!p)
     return -1;
-  if (io_exists(p) != 0 && (mkparent(p, uid, gid) != 0 || io_touch(p) != 0)) {
+  if (ensure_mount_target(ctx, sub, uid, gid) != 0) {
     mem_free(p);
     return -1;
   }
@@ -54,7 +71,7 @@ static int mount_file(const char *root, const char *sub, const char *src, uid_t 
 
 int mount_file_acl(const struct gui_ctx *ctx, const char *target, const char *source)
 {
-  int r = mount_file(ctx->root, target, source, ctx->uid, ctx->gid);
+  int r = mount_file(ctx, target, source, ctx->uid, ctx->gid);
   if (r)
     return r;
   char *absp = mem_path(ctx->root, target);
@@ -62,37 +79,6 @@ int mount_file_acl(const struct gui_ctx *ctx, const char *target, const char *so
     return -1;
   acl_guest_set(absp, ctx->uid, ctx->gid, ctx->groups, ctx->ngroups);
   mem_free(absp);
-  return 0;
-}
-
-static int try_create_own(const char *path, uid_t uid, gid_t gid)
-{
-  if (io_exists(path) != 0) {
-    if (io_mkdir(path) != 0)
-      return -1;
-    if (io_chown(path, uid, gid) != 0)
-      return -1;
-  }
-  return 0;
-}
-
-static int mkdir_parents_own(const char *path, uid_t uid, gid_t gid)
-{
-  char buf[4096];
-  size_t len = strlen(path);
-  if (len >= sizeof(buf))
-    return -1;
-  memcpy(buf, path, len + 1);
-  for (char *p = buf + 1; *p; p++) {
-    if (*p == '/') {
-      *p = '\0';
-      if (try_create_own(buf, uid, gid) != 0)
-        return -1;
-      *p = '/';
-    }
-  }
-  if (try_create_own(buf, uid, gid) != 0)
-    return -1;
   return 0;
 }
 
@@ -169,21 +155,24 @@ static int mount_xauthority(struct gui_ctx *ctx, const char *host_home, const ch
   return mount_hfile((const struct gui_ctx *)ctx, host_home, container_home, "/.Xauthority");
 }
 
+static const char *skip_slashes(const char *p)
+{
+  while (*p == '/')
+    p++;
+  return p;
+}
+
 static int ensure_guest_home(const struct gui_ctx *ctx, const char *home)
 {
-  char *absp = mem_path(ctx->root, home);
-  if (!absp)
+  if (mem_path_escapes(home)) {
+    fprintf(stderr, "cage: path contains a '..' element: %s\n", home);
     return -1;
-  if (io_exists(absp) == 0) {
-    mem_free(absp);
-    return 0;
   }
-  char *tmp = mem_cat(absp, strlen(absp), "/.dummy", 7, MEM_CAT_END);
-  mem_free(absp);
-  if (!tmp)
+  int rootfd = open_root(ctx);
+  if (rootfd < 0)
     return -1;
-  int r = mkparent(tmp, ctx->uid, ctx->gid);
-  mem_free(tmp);
+  int r = io_mkdir_parents_at(rootfd, skip_slashes(home), ctx->uid, ctx->gid, 0755);
+  close(rootfd);
   return r;
 }
 
@@ -197,24 +186,20 @@ static int ensure_guest_home_if_needed(struct gui_ctx *ctx, const char *h)
 
 static int prepare_cookie_dirs(const struct gui_ctx *ctx, const char *guest_rel)
 {
-  char *absp = mem_path(ctx->root, guest_rel);
-  if (!absp)
-    return -1;
-  if (io_exists(absp) == 0) {
-    mem_free(absp);
-    return 0;
-  }
-  char *slash = strrchr(absp, '/');
-  if (!slash) {
-    mem_free(absp);
+  if (mem_path_escapes(guest_rel)) {
+    fprintf(stderr, "cage: path contains a '..' element: %s\n", guest_rel);
     return -1;
   }
-  *slash = '\0';
-  int r = mkdir_parents_own(absp, ctx->uid, ctx->gid);
-  *slash = '/';
+  int rootfd = open_root(ctx);
+  if (rootfd < 0)
+    return -1;
+  const char *rel = skip_slashes(guest_rel);
+  char *dir = parent_of(rel);
+  int r = dir ? io_mkdir_own_at(rootfd, dir, ctx->uid, ctx->gid, 0755) : 0;
   if (r == 0)
-    r = io_touch(absp);
-  mem_free(absp);
+    r = io_touch_at(rootfd, rel, ctx->uid, ctx->gid);
+  mem_free(dir);
+  close(rootfd);
   return r;
 }
 
@@ -255,6 +240,8 @@ static int mount_user_home(struct gui_ctx *ctx, const char *container_home)
 
 int setup_gui_mounts(struct gui_ctx *ctx, const char *container_home)
 {
+  if (container_home && mem_path_escapes(container_home))
+    return -1;
   if (mount_x11(ctx) != 0)
     return -1;
   if (mount_xdg_socks(ctx) != 0)

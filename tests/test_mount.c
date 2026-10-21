@@ -653,6 +653,47 @@ static void test_same_fs_detect_different_fs(void)
   _mock_same_fs_ret = 0;
 }
 
+static void test_same_fs_detect_lower_not_parent(void)
+{
+  /* An appdir in a sibling directory of the lowerdir shares the filesystem
+   * but is not inside the lower tree, so no loopback is needed. */
+  _mock_same_fs_ret = -1;
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+  char *lower = mem_path(root, "lower");
+  ASSERT_EQ(io_mkdir(lower), 0);
+  char *appdir = mem_path(root, "appdir");
+  ASSERT_EQ(io_mkdir(appdir), 0);
+  char *upper = mem_path(appdir, "upper");
+  int r = same_fs_detect(lower, upper, NULL);
+  ASSERT_EQ(r, 0);
+  mem_free(upper);
+  mem_free(appdir);
+  mem_free(lower);
+  test_rmtree(root);
+  mem_free(root);
+  _mock_same_fs_ret = 0;
+}
+
+static void test_same_fs_detect_lower_parent_same_fs(void)
+{
+  /* The appdir is inside the lowerdir tree on the same filesystem: this is
+   * the conflict that requires a loopback. */
+  _mock_same_fs_ret = -1;
+  char *lower = test_temp_root();
+  ASSERT_NOT_NULL(lower);
+  char *appdir = mem_path(lower, "app");
+  ASSERT_EQ(io_mkdir(appdir), 0);
+  char *upper = mem_path(appdir, "upper");
+  int r = same_fs_detect(lower, upper, NULL);
+  ASSERT_EQ(r, 1);
+  mem_free(upper);
+  mem_free(appdir);
+  test_rmtree(lower);
+  mem_free(lower);
+  _mock_same_fs_ret = 0;
+}
+
 /* === make_relocated_dirs === */
 
 static void test_make_relocated_dirs_success(void)
@@ -776,7 +817,6 @@ static void test_derive_loopdir_buffer_too_small(void)
 }
 
 /* === path_under === */
-
 static void test_path_under_inside(void)
 {
   ASSERT_EQ(path_under("/var/lib/cage-loop/mywork", "/var/lib/cage-loop"), 1);
@@ -794,6 +834,44 @@ static void test_path_under_prefix_collision(void)
 }
 
 /* === handle_same_fs guards === */
+
+static void test_handle_same_fs_symlink_loopdir_fails(void)
+{
+  mock_sys_reset();
+  _mock_same_fs_ret = -1;
+  _mock_mount_ret = 0;
+
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+  char *sub = mem_path(root, "sub");
+  ASSERT_EQ(io_mkdir(sub), 0);
+  char *app = mem_path(sub, "xpto");
+  ASSERT_EQ(io_mkdir(app), 0);
+
+  char parent[4096];
+  ASSERT_EQ(derive_loopdir(app, parent, sizeof(parent)), 0);
+  char *real = mem_path(root, "real-loop");
+  ASSERT_EQ(io_mkdir(real), 0);
+  ASSERT_EQ(symlink(real, parent), 0);
+
+  cage_config_t cfg;
+  cage_config_init(&cfg);
+
+  appdir_t dirs;
+  memset(&dirs, 0, sizeof(dirs));
+  snprintf(dirs.lowerdir, sizeof(dirs.lowerdir), "%s", root);
+  snprintf(dirs.appdir, sizeof(dirs.appdir), "%s", app);
+  snprintf(dirs.upperdir, sizeof(dirs.upperdir), "%s/upper", app);
+
+  ASSERT_EQ(handle_same_fs(&cfg, &dirs), -1);
+
+  mem_free(real);
+  mem_free(app);
+  mem_free(sub);
+  test_rmtree(root);
+  mem_free(root);
+  _mock_same_fs_ret = 0;
+}
 
 static void test_handle_same_fs_custom_upper_fails(void)
 {
@@ -1027,6 +1105,8 @@ SUITE(mount)
   RUN_TEST(same_fs_detect_grandparent_null);
   RUN_TEST(same_fs_detect_same_fs);
   RUN_TEST(same_fs_detect_different_fs);
+  RUN_TEST(same_fs_detect_lower_not_parent);
+  RUN_TEST(same_fs_detect_lower_parent_same_fs);
 
   RUN_TEST(make_relocated_dirs_success);
   RUN_TEST(make_relocated_dirs_appdir_fails);
@@ -1043,6 +1123,7 @@ SUITE(mount)
   RUN_TEST(path_under_outside);
   RUN_TEST(path_under_prefix_collision);
 
+  RUN_TEST(handle_same_fs_symlink_loopdir_fails);
   RUN_TEST(handle_same_fs_custom_upper_fails);
   RUN_TEST(handle_same_fs_custom_work_outside_fails);
 

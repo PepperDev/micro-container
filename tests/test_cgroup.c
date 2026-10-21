@@ -14,6 +14,38 @@
 
 /* rmtree moved to shared test_util.h */
 
+static void seed_procs(const char *dir)
+{
+  io_mkdir(dir);
+  char *p = mem_path(dir, "cgroup.procs");
+  io_touch(p);
+  mem_free(p);
+}
+
+static void seed_v2_cage(const char *root, const char *name)
+{
+  char *cg = mem_path(root, "sys/fs/cgroup");
+  char *cage = mem_path(cg, name);
+  seed_procs(cage);
+  mem_free(cage);
+  mem_free(cg);
+}
+
+static void seed_v1_cages(const char *root, const char *name)
+{
+  char names[32][64];
+  int n = read_proc_cgroups(names);
+  for (int i = 0; i < n; i++) {
+    char *cg = mem_path(root, "sys/fs/cgroup");
+    char *ctrl = mem_path(cg, names[i]);
+    char *cage = mem_path(ctrl, name);
+    seed_procs(cage);
+    mem_free(cage);
+    mem_free(ctrl);
+    mem_free(cg);
+  }
+}
+
 static void test_cgroup_cleanup_empty(void)
 {
   cgroup_cleanup(0, 0);
@@ -87,6 +119,7 @@ static void test_v2_creates_dirs(void)
 {
   char *root = test_temp_root();
   ASSERT_NOT_NULL(root);
+  seed_v2_cage(root, "cage-1");
   int r = cgroup_v2_enter(root, "cage-1", 1);
   ASSERT_EQ(r, 0);
   char *cg = mem_path(root, "sys/fs/cgroup");
@@ -103,6 +136,7 @@ static void test_v2_creates_procs(void)
 {
   char *root = test_temp_root();
   ASSERT_NOT_NULL(root);
+  seed_v2_cage(root, "cage-1");
   int r = cgroup_v2_enter(root, "cage-1", 1);
   ASSERT_EQ(r, 0);
   char *cg = mem_path(root, "sys/fs/cgroup/cage-1");
@@ -124,6 +158,7 @@ static void test_v2_with_pid_42(void)
 {
   char *root = test_temp_root();
   ASSERT_NOT_NULL(root);
+  seed_v2_cage(root, "cage-42");
   int r = cgroup_v2_enter(root, "cage-42", 42);
   ASSERT_EQ(r, 0);
   char *cage = mem_path(root, "sys/fs/cgroup/cage-42");
@@ -137,6 +172,9 @@ static void test_v2_multiple_pids(void)
 {
   char *root = test_temp_root();
   ASSERT_NOT_NULL(root);
+  seed_v2_cage(root, "cage-1");
+  seed_v2_cage(root, "cage-999");
+  seed_v2_cage(root, "cage-12345");
   ASSERT_EQ(cgroup_v2_enter(root, "cage-1", 1), 0);
   ASSERT_EQ(cgroup_v2_enter(root, "cage-999", 999), 0);
   ASSERT_EQ(cgroup_v2_enter(root, "cage-12345", 12345), 0);
@@ -157,6 +195,7 @@ static void test_v2_deep_path(void)
 {
   char *root = test_temp_root();
   ASSERT_NOT_NULL(root);
+  seed_v2_cage(root, "cage-7");
   int r = cgroup_v2_enter(root, "cage-7", 7);
   ASSERT_EQ(r, 0);
   char *cg = mem_path(root, "sys/fs/cgroup");
@@ -203,6 +242,7 @@ static void test_v2_with_pid_0(void)
 {
   char *root = test_temp_root();
   ASSERT_NOT_NULL(root);
+  seed_v2_cage(root, "cage-0");
   int r = cgroup_v2_enter(root, "cage-0", 0);
   ASSERT_EQ(r, 0);
   char *cage = mem_path(root, "sys/fs/cgroup/cage-0");
@@ -216,6 +256,7 @@ static void test_v2_existing_path(void)
 {
   char *root = test_temp_root();
   ASSERT_NOT_NULL(root);
+  seed_v2_cage(root, "cage-1");
   ASSERT_EQ(cgroup_v2_enter(root, "cage-1", 1), 0);
   ASSERT_EQ(cgroup_v2_enter(root, "cage-1", 1), 0);
   char *cage = mem_path(root, "sys/fs/cgroup/cage-1");
@@ -236,11 +277,24 @@ static void test_write_pid_fail(void)
   mem_free(root);
 }
 
+static void test_write_pid_missing_rejected(void)
+{
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+  char *pf = mem_path(root, "missing.pid");
+  ASSERT_EQ(write_pid(pf, 42), -1);
+  ASSERT_EQ(io_exists(pf), 1);
+  mem_free(pf);
+  test_rmtree(root);
+  mem_free(root);
+}
+
 static void test_write_pid_success(void)
 {
   char *root = test_temp_root();
   ASSERT_NOT_NULL(root);
   char *pf = mem_path(root, "writepid");
+  io_touch(pf);
   ASSERT_EQ(write_pid(pf, 123), 0);
   int fd = open(pf, O_RDONLY);
   ASSERT_NE(fd, -1);
@@ -290,6 +344,7 @@ static void test_v2_enter_basic(void)
 {
   char *tmp = test_temp_root();
   ASSERT_NOT_NULL(tmp);
+  seed_v2_cage(tmp, "test-cage");
   ASSERT_EQ(cgroup_v2_enter(tmp, "test-cage", 77), 0);
   ASSERT_EQ(cgroup_v2_enter(tmp, "test-cage", 77), 0);
   char *procs = mem_path(tmp, "sys/fs/cgroup/test-cage/cgroup.procs");
@@ -324,6 +379,7 @@ static void test_v1_enter_creates_dirs(void)
     return;
   char *tmp = test_temp_root();
   ASSERT_NOT_NULL(tmp);
+  seed_v1_cages(tmp, "test-cage-99");
   int r = cgroup_v1_enter(tmp, "test-cage-99", 99);
   ASSERT_EQ(r, 0);
   test_rmtree(tmp);
@@ -334,7 +390,7 @@ static void test_build_subtree_basic(void)
 {
   char out[256];
   size_t len;
-  ASSERT_EQ(build_subtree_value("cpu io pids", 11, out, &len), 0);
+  ASSERT_EQ(build_subtree_value("cpu io pids", 11, out, sizeof(out), &len), 0);
   ASSERT_EQ(len, 14);
   ASSERT_EQ(strcmp(out, "+cpu +io +pids"), 0);
 }
@@ -343,7 +399,7 @@ static void test_build_subtree_single(void)
 {
   char out[256];
   size_t len;
-  ASSERT_EQ(build_subtree_value("cpu", 3, out, &len), 0);
+  ASSERT_EQ(build_subtree_value("cpu", 3, out, sizeof(out), &len), 0);
   ASSERT_EQ(len, 4);
   ASSERT_EQ(strcmp(out, "+cpu"), 0);
 }
@@ -352,7 +408,27 @@ static void test_build_subtree_empty(void)
 {
   char out[256];
   size_t len;
-  ASSERT_EQ(build_subtree_value("", 0, out, &len), -1);
+  ASSERT_EQ(build_subtree_value("", 0, out, sizeof(out), &len), -1);
+}
+
+static void test_build_subtree_all_spaces_fits(void)
+{
+  char in[126];
+  memset(in, ' ', sizeof(in));
+  char out[256];
+  size_t len;
+  ASSERT_EQ(build_subtree_value(in, sizeof(in), out, sizeof(out), &len), 0);
+  ASSERT_EQ(len, 1 + 2 * sizeof(in));
+  ASSERT_EQ(out[len], '\0');
+}
+
+static void test_build_subtree_overflow_rejected(void)
+{
+  char in[128];
+  memset(in, ' ', sizeof(in));
+  char out[256];
+  size_t len;
+  ASSERT_EQ(build_subtree_value(in, sizeof(in), out, sizeof(out), &len), -1);
 }
 
 static void test_write_subtree_basic(void)
@@ -589,6 +665,7 @@ static void test_cgroup_enter_with_mock_root(void)
 {
   char *root = test_temp_root();
   ASSERT_NOT_NULL(root);
+  seed_v2_cage(root, "cage-parent");
   int r = cgroup_enter(root, 1);
   ASSERT_EQ(r, 0);
   char *cg = mem_path(root, "sys/fs/cgroup/cage-parent");
@@ -774,6 +851,7 @@ static void test_cgroup_enter_v1(void)
 {
   char *root = test_temp_root();
   ASSERT_NOT_NULL(root);
+  seed_v1_cages(root, "cage-parent");
   ASSERT_EQ(cgroup_enter(root, 0), 0);
   test_rmtree(root);
   mem_free(root);
@@ -855,6 +933,7 @@ SUITE(cgroup)
   RUN_TEST(v1_enter_one_creates_dirs);
   RUN_TEST(v1_enter_creates_dirs);
   RUN_TEST(write_pid_fail);
+  RUN_TEST(write_pid_missing_rejected);
   RUN_TEST(write_pid_success);
   RUN_TEST(advance_line_with_newline);
   RUN_TEST(advance_line_no_newline);
@@ -863,6 +942,8 @@ SUITE(cgroup)
   RUN_TEST(build_subtree_basic);
   RUN_TEST(build_subtree_single);
   RUN_TEST(build_subtree_empty);
+  RUN_TEST(build_subtree_all_spaces_fits);
+  RUN_TEST(build_subtree_overflow_rejected);
   RUN_TEST(write_subtree_basic);
   RUN_TEST(write_subtree_fail);
   RUN_TEST(enable_cgroup_controllers_success);

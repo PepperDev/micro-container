@@ -21,6 +21,6 @@ The flow pseudo-code in this document uses the following conventions:
 - **Sequential execution**: Statements run top to bottom; an indented block runs in place before the next statement at the same indent level. There is no implicit continuation from a nested node back to a parent node — the next step is always the next line at the same or an outer indentation.
 - **Labels**: `goto <label>` transfers control to the named labelled block; used where the flow shares a common tail.
 - **Processes**: A bracketed tag on a routine (e.g. `setup net [main]:`, `setup veth [container child]:`) names the process the steps run in.
-- **References**: `see §Section Name` links to detailed sub-sections. Cross-file references use relative links to the sibling document (e.g. `[§Cgroup Lifecycle](lifecycle.md#cgroup-lifecycle)`). `→` indicates a conditional outcome.
+- **References**: `see §Section Name` links to detailed sub-sections. Cross-file references use relative links to the sibling document (e.g. `[§Cgroup Lifecycle](lifecycle.md#container-lifecycle)`). `→` indicates a conditional outcome.
 
-See [CONTRIBUTING.md §Domain Knowledge](../CONTRIBUTING.md#domain-knowledge) for the guiding principle: the `docs/` directory is the **source of truth**. Naming in code may differ from naming in the spec, but behaviour must match. If code disagrees with `docs/`, the code is wrong and must change.
+See [CONTRIBUTING.md §Domain Knowledge](../CONTRIBUTING.md#contributing) for the guiding principle: the `docs/` directory is the **source of truth**. Naming in code may differ from naming in the spec, but behaviour must match. If code disagrees with `docs/`, the code is wrong and must change.

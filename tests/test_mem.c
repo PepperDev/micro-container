@@ -66,6 +66,22 @@ static void test_mem_path_leading_slash_append(void)
   mem_free(p);
 }
 
+static void test_mem_path_escapes_dotdot(void)
+{
+  ASSERT_EQ(mem_path_escapes(".."), 1);
+  ASSERT_EQ(mem_path_escapes("../../etc"), 1);
+  ASSERT_EQ(mem_path_escapes("/data/../../x"), 1);
+  ASSERT_EQ(mem_path_escapes("a/.."), 1);
+}
+
+static void test_mem_path_escapes_safe(void)
+{
+  ASSERT_EQ(mem_path_escapes("/home/user"), 0);
+  ASSERT_EQ(mem_path_escapes("data/sub"), 0);
+  ASSERT_EQ(mem_path_escapes("..."), 0);
+  ASSERT_EQ(mem_path_escapes(""), 0);
+}
+
 static void test_buf_grow(void)
 {
   buf_t b = BUF_INIT;
@@ -113,6 +129,8 @@ SUITE(mem)
   RUN_TEST(mem_path_simple);
   RUN_TEST(mem_path_trailing_slash);
   RUN_TEST(mem_path_leading_slash_append);
+  RUN_TEST(mem_path_escapes_dotdot);
+  RUN_TEST(mem_path_escapes_safe);
   RUN_TEST(buf_grow);
   RUN_TEST(buf_append);
   RUN_TEST(buf_append_c);

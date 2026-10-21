@@ -235,6 +235,26 @@ static void test_scan_loop_devices_with_existing(void)
   io_unlink("/dev/loop0");
 }
 
+static void test_scan_loop_devices_stale_errno(void)
+{
+  mock_sys_reset();
+  _mock_loop_get_free_ret = -1;
+  _mock_loop_add_ret = -1;
+
+  io_unlink("/dev/loop0");
+  int fd = open("/dev/loop0", O_WRONLY | O_CREAT | O_CLOEXEC, 0644);
+  if (fd < 0)
+    return;
+  close(fd);
+
+  /* A successful stat must win even when errno still holds a stale ENXIO */
+  _mock_loop_get_stat_ret = 0;
+  errno = ENXIO;
+  ASSERT_EQ(scan_loop_devices(), -1);
+
+  io_unlink("/dev/loop0");
+}
+
 static void test_loop_nodisk(void)
 {
   char dev[64];
@@ -308,6 +328,7 @@ SUITE(loop)
   RUN_TEST(try_open_loop_dev_nonexistent);
   RUN_TEST(scan_loop_devices_empty);
   RUN_TEST(scan_loop_devices_with_existing);
+  RUN_TEST(scan_loop_devices_stale_errno);
   RUN_TEST(loop_nodisk);
   RUN_TEST(loop_returns_open_fd);
 }

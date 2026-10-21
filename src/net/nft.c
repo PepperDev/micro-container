@@ -18,11 +18,15 @@
 // cppcheck-suppress missingIncludeSystem
 #include <linux/netfilter/nf_tables.h>
 
-static int nft_ack_errno(const void *buf)
+static int nft_ack_errno(const void *buf, size_t len)
 {
   const struct nlmsghdr *h = (const struct nlmsghdr *)buf;
+  if (len < NLMSG_HDRLEN || !NLMSG_OK(h, len))
+    return -EINVAL;
   if (h->nlmsg_type != NLMSG_ERROR)
     return 0;
+  if (h->nlmsg_len < NLMSG_LENGTH(sizeof(struct nlmsgerr)))
+    return -EINVAL;
   const struct nlmsgerr *e = (const struct nlmsgerr *)NLMSG_DATA(h);
   return e->error;
 }
@@ -32,7 +36,7 @@ static int nft_drain_rest(int fd, int err)
   char ack[4096];
   size_t alen;
   while (sys_netlink_recv_nb(fd, ack, sizeof(ack), &alen) == 0) {
-    int e = nft_ack_errno(ack);
+    int e = nft_ack_errno(ack, alen);
     if (e != 0 && err == 0)
       err = e;
   }
@@ -45,7 +49,7 @@ static int nft_recv_ack(int fd)
   size_t alen;
   if (sys_netlink_recv(fd, ack, sizeof(ack), &alen) < 0)
     return -1;
-  return nft_drain_rest(fd, nft_ack_errno(ack));
+  return nft_drain_rest(fd, nft_ack_errno(ack, alen));
 }
 
 static void *nft_put_attr(void *p, uint16_t type, const void *data, uint16_t dlen)
@@ -88,6 +92,23 @@ static size_t nft_str_off(void *req, size_t off, uint16_t type, const char *s)
   return (size_t)((char *)nft_put_str((char *)req + off, type, s) - (char *)req);
 }
 
+static size_t nft_be32_off(void *req, size_t off, uint16_t type, uint32_t val)
+{
+  return (size_t)((char *)nft_put_be32((char *)req + off, type, val) - (char *)req);
+}
+
+static size_t nft_chain_hook(void *req, size_t off)
+{
+  size_t hoff = off;
+  struct nlattr *ha = (struct nlattr *)((char *)req + off);
+  ha->nla_type = NFTA_CHAIN_HOOK | NLA_F_NESTED;
+  off += sizeof(struct nlattr);
+  off = nft_be32_off(req, off, NFTA_HOOK_HOOKNUM, NF_INET_POST_ROUTING);
+  off = nft_be32_off(req, off, NFTA_HOOK_PRIORITY, 100);
+  ha->nla_len = (uint16_t) (off - hoff);
+  return off;
+}
+
 struct nft_batch {
   char data[768];
   size_t len;
@@ -110,8 +131,10 @@ static void nft_batch_open(struct nft_batch *b)
   b->len = NLMSG_ALIGN(h->nlmsg_len);
 }
 
-static void nft_batch_msg(struct nft_batch *b, uint16_t type, uint16_t flags, void *msg, size_t mlen)
+static int nft_batch_msg(struct nft_batch *b, uint16_t type, uint16_t flags, void *msg, size_t mlen)
 {
+  if (b->len + NLMSG_ALIGN(mlen) > sizeof(b->data))
+    return -1;
   struct nlmsghdr *h = (struct nlmsghdr *)msg;
   h->nlmsg_len = (uint32_t) mlen;
   h->nlmsg_type = type;
@@ -119,10 +142,14 @@ static void nft_batch_msg(struct nft_batch *b, uint16_t type, uint16_t flags, vo
   h->nlmsg_seq = ++b->seq;
   memcpy(b->data + b->len, msg, mlen);
   b->len += NLMSG_ALIGN(mlen);
+  return 0;
 }
 
-static int nft_batch_flush(struct nft_batch *b, int fd)
+static int nft_batch_end(struct nft_batch *b)
 {
+  size_t elen = NLMSG_ALIGN(NLMSG_HDRLEN + sizeof(struct nfgenmsg));
+  if (b->len + elen > sizeof(b->data))
+    return -1;
   struct nlmsghdr *h = (struct nlmsghdr *)(b->data + b->len);
   memset(h, 0, NLMSG_HDRLEN + sizeof(struct nfgenmsg));
   h->nlmsg_type = NFNL_MSG_BATCH_END;
@@ -132,7 +159,14 @@ static int nft_batch_flush(struct nft_batch *b, int fd)
   struct nfgenmsg *g = (struct nfgenmsg *)NLMSG_DATA(h);
   g->version = NFNETLINK_V0;
   g->res_id = htons(NFNL_SUBSYS_NFTABLES);
-  b->len += NLMSG_ALIGN(h->nlmsg_len);
+  b->len += elen;
+  return 0;
+}
+
+static int nft_batch_flush(struct nft_batch *b, int fd)
+{
+  if (nft_batch_end(b) != 0)
+    return -1;
   if (sys_netlink_send(fd, b->data, b->len) < 0)
     return -1;
   return nft_recv_ack(fd);
@@ -151,7 +185,7 @@ static int nft_batch_flush(struct nft_batch *b, int fd)
 #define NFT_PUT_BE32(field, val) \
   off = (size_t)((char *)nft_put_be32((char *)&req + off, (field), (val)) - (char *)&req)
 
-static void nft_create_table(struct nft_batch *b, int family)
+static int nft_create_table(struct nft_batch *b, int family)
 {
   struct {
     struct nlmsghdr nh;
@@ -162,10 +196,10 @@ static void nft_create_table(struct nft_batch *b, int family)
   size_t off;
   NFT_INIT(family);
   NFT_PUT_STR(NFTA_TABLE_NAME, "cage-nat");
-  nft_batch_msg(b, (NFNL_SUBSYS_NFTABLES << 8) | NFT_MSG_NEWTABLE, NLM_F_CREATE | NLM_F_EXCL, &req, off);
+  return nft_batch_msg(b, (NFNL_SUBSYS_NFTABLES << 8) | NFT_MSG_NEWTABLE, NLM_F_CREATE | NLM_F_EXCL, &req, off);
 }
 
-static void nft_create_chain(struct nft_batch *b, int family)
+static int nft_create_chain(struct nft_batch *b, int family)
 {
   struct {
     struct nlmsghdr nh;
@@ -177,15 +211,9 @@ static void nft_create_chain(struct nft_batch *b, int family)
   NFT_INIT(family);
   NFT_PUT_STR(NFTA_CHAIN_TABLE, "cage-nat");
   NFT_PUT_STR(NFTA_CHAIN_NAME, "postrouting");
-  size_t hoff = off;
-  struct nlattr *ha = (struct nlattr *)((char *)&req + off);
-  ha->nla_type = NFTA_CHAIN_HOOK | NLA_F_NESTED;
-  off += sizeof(struct nlattr);
-  NFT_PUT_BE32(NFTA_HOOK_HOOKNUM, NF_INET_POST_ROUTING);
-  NFT_PUT_BE32(NFTA_HOOK_PRIORITY, 100);
-  ha->nla_len = (uint16_t) (off - hoff);
+  off = nft_chain_hook(&req, off);
   NFT_PUT_STR(NFTA_CHAIN_TYPE, "nat");
-  nft_batch_msg(b, (NFNL_SUBSYS_NFTABLES << 8) | NFT_MSG_NEWCHAIN, NLM_F_CREATE, &req, off);
+  return nft_batch_msg(b, (NFNL_SUBSYS_NFTABLES << 8) | NFT_MSG_NEWCHAIN, NLM_F_CREATE, &req, off);
 }
 
 static void nft_set_len(void *req, size_t start, size_t off)
@@ -207,7 +235,7 @@ static size_t nft_put_expr_masq(void *req, size_t off)
   return off;
 }
 
-static void nft_add_masq_rule(struct nft_batch *b, int family)
+static int nft_add_masq_rule(struct nft_batch *b, int family)
 {
   struct {
     struct nlmsghdr nh;
@@ -220,7 +248,7 @@ static void nft_add_masq_rule(struct nft_batch *b, int family)
   NFT_PUT_STR(NFTA_RULE_TABLE, "cage-nat");
   NFT_PUT_STR(NFTA_RULE_CHAIN, "postrouting");
   off = nft_put_expr_masq(&req, off);
-  nft_batch_msg(b, (NFNL_SUBSYS_NFTABLES << 8) | NFT_MSG_NEWRULE, NLM_F_CREATE | NLM_F_APPEND, &req, off);
+  return nft_batch_msg(b, (NFNL_SUBSYS_NFTABLES << 8) | NFT_MSG_NEWRULE, NLM_F_CREATE | NLM_F_APPEND, &req, off);
 }
 
 int netfilter_open(int *fd)
@@ -240,6 +268,15 @@ int netfilter_open(int *fd)
   return 0;
 }
 
+static int nft_build(struct nft_batch *b, int family)
+{
+  if (nft_create_table(b, family) != 0)
+    return -1;
+  if (nft_create_chain(b, family) != 0)
+    return -1;
+  return nft_add_masq_rule(b, family);
+}
+
 static int nft_setup_family(int family)
 {
   int fd;
@@ -247,9 +284,10 @@ static int nft_setup_family(int family)
     return -1;
   struct nft_batch b;
   nft_batch_open(&b);
-  nft_create_table(&b, family);
-  nft_create_chain(&b, family);
-  nft_add_masq_rule(&b, family);
+  if (nft_build(&b, family) != 0) {
+    close(fd);
+    return -1;
+  }
   int r = nft_batch_flush(&b, fd);
   close(fd);
   return r == 0 || r == -EEXIST ? 0 : -1;

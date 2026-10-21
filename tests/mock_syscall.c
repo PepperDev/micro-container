@@ -13,7 +13,13 @@ extern int __needs_default_dns(void);
 extern int __net_enable_ip_forward(void);
 extern int __net_enable_ip6_forward(void);
 extern int __sys_stat(const char *path, struct stat *buf);
+extern int __sys_open_rdonly(const char *path, int flags);
+extern int __sys_fstat(int fd, struct stat *buf);
+extern int __sys_isdir_nofollow(const char *path);
 extern int __sys_chown(const char *path, uid_t owner, gid_t group);
+extern int __sys_fchownat(int dirfd, const char *path, uid_t owner, gid_t group, int flags);
+extern int __sys_setreuid(uid_t ruid, uid_t euid);
+extern int __sys_setregid(gid_t rgid, gid_t egid);
 extern int __loop_open_control(void);
 extern const char *__resolve_mod_dir(void);
 extern const char *__resolve_build_prefix(void);
@@ -33,6 +39,8 @@ extern const char *__modprobe_builtin_prefix(void);
 #include <sys/statfs.h>
 // cppcheck-suppress missingIncludeSystem
 #include <unistd.h>
+// cppcheck-suppress missingIncludeSystem
+#include <fcntl.h>
 
 int _mock_mount_ret;
 int _mock_mount_count;
@@ -80,7 +88,13 @@ int _mock_netlink_send_ack_ret;
 int _mock_netlink_recv_dump_ret;
 int _mock_chown_ret = -1;
 int _mock_chown_count;
+int _mock_fchownat_ret = -1;
+int _mock_fchownat_count;
 int _mock_access_ret;
+int _mock_setreuid_ret = -1;
+int _mock_setreuid_count;
+int _mock_setregid_ret = -1;
+int _mock_setregid_count;
 int _mock_stat_ret;
 int _mock_opendir_fail;
 struct mock_dirent _mock_dirents[MOCK_DIRENTS_MAX];
@@ -244,7 +258,13 @@ void mock_sys_reset(void)
   _mock_netlink_recv_dump_ret = 0;
   _mock_chown_ret = -1;
   _mock_chown_count = 0;
+  _mock_fchownat_ret = -1;
+  _mock_fchownat_count = 0;
   _mock_access_ret = 0;
+  _mock_setreuid_ret = -1;
+  _mock_setreuid_count = 0;
+  _mock_setregid_ret = -1;
+  _mock_setregid_count = 0;
   _mock_stat_ret = -1;
   _mock_opendir_fail = 0;
   _mock_dirent_count = 0;
@@ -389,6 +409,32 @@ int sys_setxattr(const char *path, const char *name, const void *value, size_t s
   return _mock_setxattr_ret;
 }
 
+int sys_open_rdonly(const char *path, int flags)
+{
+  if (_mock_stat_ret < 0)
+    return __sys_open_rdonly(path, flags);
+  if (_mock_stat_ret != 0)
+    return -1;
+  return open("/dev/null", O_PATH | O_CLOEXEC);
+}
+
+int sys_fstat(int fd, struct stat *buf)
+{
+  if (_mock_stat_ret < 0)
+    return __sys_fstat(fd, buf);
+  if (_mock_stat_ret == 0 && buf) {
+    memset(buf, 0, sizeof(*buf));
+    buf->st_uid = 0;
+    buf->st_mode = S_IFSOCK | 0600;
+  }
+  return _mock_stat_ret;
+}
+
+int sys_isdir_nofollow(const char *path)
+{
+  return __sys_isdir_nofollow(path);
+}
+
 int sys_loop_get_free(int ctl_fd)
 {
   (void)ctl_fd;
@@ -458,6 +504,30 @@ int sys_chown(const char *path, uid_t owner, gid_t group)
     return __sys_chown(path, owner, group);
   _mock_chown_count++;
   return _mock_chown_ret;
+}
+
+int sys_fchownat(int dirfd, const char *path, uid_t owner, gid_t group, int flags)
+{
+  if (_mock_fchownat_ret < 0)
+    return __sys_fchownat(dirfd, path, owner, group, flags);
+  _mock_fchownat_count++;
+  return _mock_fchownat_ret;
+}
+
+int sys_setreuid(uid_t ruid, uid_t euid)
+{
+  if (_mock_setreuid_ret < 0)
+    return __sys_setreuid(ruid, euid);
+  _mock_setreuid_count++;
+  return _mock_setreuid_ret;
+}
+
+int sys_setregid(gid_t rgid, gid_t egid)
+{
+  if (_mock_setregid_ret < 0)
+    return __sys_setregid(rgid, egid);
+  _mock_setregid_count++;
+  return _mock_setregid_ret;
 }
 
 DIR *sys_opendir(const char *path)

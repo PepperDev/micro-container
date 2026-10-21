@@ -17,6 +17,9 @@ int io_mkdtmp(const char *path, int sticky);
 int io_symlink(const char *target, const char *path);
 int io_chown(const char *path, uid_t uid, gid_t gid);
 int io_touch(const char *path);
+int io_mkdir_own_at(int rootfd, const char *rel, uid_t uid, gid_t gid, mode_t mode);
+int io_mkdir_parents_at(int rootfd, const char *rel, uid_t uid, gid_t gid, mode_t mode);
+int io_touch_at(int rootfd, const char *rel, uid_t uid, gid_t gid);
 int io_read(const char *path, buf_t * b);
 int io_read_quiet(const char *path, buf_t * b);
 

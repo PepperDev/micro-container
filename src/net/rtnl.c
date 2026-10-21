@@ -41,11 +41,22 @@ static struct ifinfomsg *fill_ifinfomsg(struct nlmsghdr *h, unsigned char family
   return ifi;
 }
 
-static int fill_veth_peer(void *buf, size_t cap, size_t *off, const char *peer, int nsfd)
+static int put_ifinfomsg_zero(void *buf, size_t cap, size_t *off)
 {
-  size_t vp = netlink_nest_start(buf, off, VETH_INFO_PEER | NLA_F_NESTED);
+  if (*off + sizeof(struct ifinfomsg) > cap)
+    return -1;
   memset((char *)buf + *off, 0, sizeof(struct ifinfomsg));
   *off += sizeof(struct ifinfomsg);
+  return 0;
+}
+
+static int fill_veth_peer(void *buf, size_t cap, size_t *off, const char *peer, int nsfd)
+{
+  size_t vp;
+  if (netlink_nest_start(buf, cap, off, VETH_INFO_PEER | NLA_F_NESTED, &vp) < 0)
+    return -1;
+  if (put_ifinfomsg_zero(buf, cap, off) < 0)
+    return -1;
   if (netlink_put_string(buf, cap, off, IFLA_IFNAME, peer) < 0)
     return -1;
   if (put_attr_u32(buf, cap, off, IFLA_NET_NS_FD, (uint32_t) nsfd) < 0)
@@ -56,10 +67,14 @@ static int fill_veth_peer(void *buf, size_t cap, size_t *off, const char *peer, 
 
 static int fill_veth_linkinfo(void *buf, size_t cap, size_t *off, const char *peer, int nsfd)
 {
-  size_t li = netlink_nest_start(buf, off, IFLA_LINKINFO | NLA_F_NESTED);
+  size_t li;
+  if (netlink_nest_start(buf, cap, off, IFLA_LINKINFO | NLA_F_NESTED, &li) < 0)
+    return -1;
   if (netlink_put_string(buf, cap, off, IFLA_INFO_KIND, "veth") < 0)
     return -1;
-  size_t id = netlink_nest_start(buf, off, IFLA_INFO_DATA | NLA_F_NESTED);
+  size_t id;
+  if (netlink_nest_start(buf, cap, off, IFLA_INFO_DATA | NLA_F_NESTED, &id) < 0)
+    return -1;
   if (fill_veth_peer(buf, cap, off, peer, nsfd) < 0)
     return -1;
   netlink_nest_end(buf, id, off);
@@ -167,7 +182,7 @@ static int fill_addr_attrs(void *buf, size_t cap, size_t *off, int prefix, uint3
   uint32_t addr = htonl(local);
   if (put_attr_u32(buf, cap, off, IFA_LOCAL, addr) < 0)
     return -1;
-  if (prefix >= 31)
+  if (prefix <= 0 || prefix >= 31)
     return 0;
   uint32_t nm = htonl((1u << (32 - prefix)) - 1);
   return put_attr_u32(buf, cap, off, IFA_BROADCAST, addr | nm);

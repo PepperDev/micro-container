@@ -20,6 +20,10 @@
 // cppcheck-suppress missingIncludeSystem
 #include <sys/xattr.h>
 // cppcheck-suppress missingIncludeSystem
+#include <fcntl.h>
+// cppcheck-suppress missingIncludeSystem
+#include <sys/stat.h>
+// cppcheck-suppress missingIncludeSystem
 #include <signal.h>
 // cppcheck-suppress missingIncludeSystem
 #include <grp.h>
@@ -91,6 +95,73 @@ int __sys_setxattr(const char *path, const char *name, const void *value, size_t
 }
 
 weak_alias(__sys_setxattr, sys_setxattr);
+
+// cppcheck-suppress staticFunction
+int __sys_open_rdonly(const char *path, int flags)
+{
+  int fd;
+  if ((flags & SYS_OPEN_NOFOLLOW) && (fd = open(path, O_PATH | O_NOFOLLOW | O_CLOEXEC)) >= 0) {
+    struct stat st;
+    if (fstat(fd, &st) == 0 && S_ISLNK(st.st_mode)) {
+      close(fd);
+      return -1;
+    }
+  }
+  return open(path, O_PATH | O_CLOEXEC);
+}
+
+weak_alias(__sys_open_rdonly, sys_open_rdonly);
+
+// cppcheck-suppress staticFunction
+int __sys_openat(int dirfd, const char *path, int flags, mode_t mode)
+{
+  return openat(dirfd, path, flags, mode);
+}
+
+weak_alias(__sys_openat, sys_openat);
+
+// cppcheck-suppress staticFunction
+int __sys_mkdirat(int dirfd, const char *path, mode_t mode)
+{
+  return mkdirat(dirfd, path, mode);
+}
+
+weak_alias(__sys_mkdirat, sys_mkdirat);
+
+// cppcheck-suppress staticFunction
+int __sys_fstatat(int dirfd, const char *path, struct stat *buf, int flags)
+{
+  return fstatat(dirfd, path, buf, flags);
+}
+
+weak_alias(__sys_fstatat, sys_fstatat);
+
+// cppcheck-suppress staticFunction
+int __sys_fchownat(int dirfd, const char *path, uid_t owner, gid_t group, int flags)
+{
+  return fchownat(dirfd, path, owner, group, flags);
+}
+
+weak_alias(__sys_fchownat, sys_fchownat);
+
+// cppcheck-suppress staticFunction
+int __sys_isdir_nofollow(const char *path)
+{
+  struct stat st;
+  if (lstat(path, &st) != 0)
+    return -1;
+  return S_ISDIR(st.st_mode) ? 1 : 0;
+}
+
+weak_alias(__sys_isdir_nofollow, sys_isdir_nofollow);
+
+// cppcheck-suppress staticFunction
+int __sys_fstat(int fd, struct stat *buf)
+{
+  return fstat(fd, buf);
+}
+
+weak_alias(__sys_fstat, sys_fstat);
 
 // cppcheck-suppress staticFunction
 int __sys_loop_get_free(int ctl_fd)
@@ -283,3 +354,19 @@ int __sys_chown(const char *path, uid_t owner, gid_t group)
 }
 
 weak_alias(__sys_chown, sys_chown);
+
+// cppcheck-suppress staticFunction
+int __sys_setreuid(uid_t ruid, uid_t euid)
+{
+  return setreuid(ruid, euid);
+}
+
+weak_alias(__sys_setreuid, sys_setreuid);
+
+// cppcheck-suppress staticFunction
+int __sys_setregid(gid_t rgid, gid_t egid)
+{
+  return setregid(rgid, egid);
+}
+
+weak_alias(__sys_setregid, sys_setregid);

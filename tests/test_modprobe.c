@@ -598,6 +598,27 @@ static void test_load_module_path_xz_fallback(void)
   mem_free(root);
 }
 
+static void test_load_module_path_xz_no_shell(void)
+{
+  mock_sys_reset();
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+  char *sentinel = mem_path(root, "shell-was-used");
+  char *name = mem_cat("xz-\"; touch ", 12, sentinel, strlen(sentinel), ";\" ", 3, ".ko", 3, MEM_CAT_END);
+  char *path = mem_path(root, name);
+  unsigned char xz_magic[] = { 0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00 };
+  write_raw(path, xz_magic, sizeof(xz_magic));
+  _mock_finit_module_ret = -1;
+  _mock_finit_module_errno = EOPNOTSUPP;
+  ASSERT_EQ(load_module_path(path), -1);
+  ASSERT_EQ(io_exists(sentinel), 1);
+  mem_free(path);
+  mem_free(name);
+  mem_free(sentinel);
+  test_rmtree(root);
+  mem_free(root);
+}
+
 static void test_load_module_path_zstd_fallback(void)
 {
   mock_sys_reset();
@@ -1078,5 +1099,6 @@ SUITE(modprobe)
   RUN_TEST(load_decompressed_missing_file);
   RUN_TEST(load_module_path_compressed_finit_err);
   RUN_TEST(load_module_path_xz_fallback);
+  RUN_TEST(load_module_path_xz_no_shell);
   RUN_TEST(load_module_path_zstd_fallback);
 }

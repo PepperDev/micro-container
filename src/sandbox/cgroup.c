@@ -15,14 +15,20 @@
 
 int write_pid(const char *path, pid_t pid)
 {
-  int fd = open(path, O_WRONLY | O_CREAT, 0644);
+  int fd = open(path, O_WRONLY);
   if (fd < 0) {
     fprintf(stderr, "cage: open %s failed\n", path);
     return -1;
   }
-  dprintf(fd, "%d\n", (int)pid);
+  char buf[32];
+  int n = snprintf(buf, sizeof(buf), "%d\n", (int)pid);
+  if (n <= 0 || (size_t)n >= sizeof(buf)) {
+    close(fd);
+    return -1;
+  }
+  ssize_t w = write(fd, buf, (size_t)n);
   close(fd);
-  return 0;
+  return w == n ? 0 : -1;
 }
 
 // cppcheck-suppress staticFunction
@@ -81,9 +87,9 @@ int cgroup_v1_enter_one(const char *cg, const char *ctrl, const char *name, pid_
   return -1;
 }
 
-int build_subtree_value(const char *in, size_t len, char *out, size_t *out_len)
+int build_subtree_value(const char *in, size_t len, char *out, size_t cap, size_t *out_len)
 {
-  if (len == 0 || len + 2 >= 256)
+  if (len == 0 || 2 * len + 2 > cap)
     return -1;
   out[0] = '+';
   size_t w = 1;
@@ -117,6 +123,14 @@ int write_subtree(const char *cg, const char *val, size_t vlen)
   return r;
 }
 
+static size_t trim_trailing_newline(char *s)
+{
+  size_t len = strlen(s);
+  if (len && s[len - 1] == '\n')
+    s[--len] = '\0';
+  return len;
+}
+
 int enable_cgroup_controllers(const char *cg)
 {
   buf_t ctrls = BUF_INIT;
@@ -129,15 +143,11 @@ int enable_cgroup_controllers(const char *cg)
   }
   mem_free(p);
 
-  size_t len = strlen(ctrls.data);
-  if (len)
-    len -= ctrls.data[len - 1] == '\n';
-  ctrls.data[len] = '\0';
-
+  size_t len = trim_trailing_newline(ctrls.data);
   char val[256];
   size_t vlen;
   int r = 0;
-  if (build_subtree_value(ctrls.data, len, val, &vlen) == 0)
+  if (build_subtree_value(ctrls.data, len, val, sizeof(val), &vlen) == 0)
     r = write_subtree(cg, val, vlen);
   buf_free(&ctrls);
   return r;

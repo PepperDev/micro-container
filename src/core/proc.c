@@ -25,6 +25,8 @@
 #include <time.h>
 // cppcheck-suppress missingIncludeSystem
 #include <stdlib.h>
+// cppcheck-suppress missingIncludeSystem
+#include <limits.h>
 
 #define PID_DIR "/run/cage"
 
@@ -101,6 +103,8 @@ static long parse_pid(const char *buf)
   long pid = strtol(buf, &end, 10);
   if (end == buf || *end != '\0' || errno != 0)
     return -1;
+  if (pid <= 0 || pid > INT_MAX)
+    return -1;
   return pid;
 }
 
@@ -140,13 +144,19 @@ int close_pid(int fd)
 
 int pidwait(pid_t pid, int *status)
 {
-  if (waitpid(pid, status, 0) < 0) {
+  int st;
+  int *out = status ? status : &st;
+  for (;;) {
+    pid_t r = waitpid(pid, out, 0);
+    if (r >= 0)
+      return 0;
+    if (errno == EINTR)
+      continue;
     if (errno == ECHILD)
       return 0;
     fprintf(stderr, "cage: waitpid failed\n");
     return -1;
   }
-  return 0;
 }
 
 int exit_code_from_status(int status)
@@ -251,11 +261,10 @@ static int pid_zombie(pid_t pid)
   char path[64];
   buf_t b = BUF_INIT;
   snprintf(path, sizeof(path), "/proc/%d/stat", (int)pid);
-  if (io_read_quiet(path, &b) != 0 || buf_grow(&b, 1) != 0) {
+  if (io_read_quiet(path, &b) != 0) {
     buf_free(&b);
     return 1;
   }
-  b.data[b.len] = '\0';
   const char *rp = strrchr(b.data, ')');
   int z = 1;
   if (rp && rp[1] == ' ' && rp[2] != '\0')

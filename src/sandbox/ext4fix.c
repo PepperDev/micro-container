@@ -17,6 +17,12 @@
 #include <errno.h>
 // cppcheck-suppress missingIncludeSystem
 #include <unistd.h>
+// cppcheck-suppress missingIncludeSystem
+#include <sys/statfs.h>
+
+#ifndef OVERLAYFS_SUPER_MAGIC
+#define OVERLAYFS_SUPER_MAGIC 0x794c7630
+#endif
 
 #define LOOP_SUFFIX     "-loop"
 #define LOOP_SUFFIX_LEN 5
@@ -27,7 +33,7 @@ typedef struct {
   char loop_appdir[4096];
 } loop_t;
 
-/* cppcheck-suppress staticFunction */
+// cppcheck-suppress unusedFunction
 char *grandparent(const char *path)
 {
   char *p = mem_strdup(path);
@@ -74,18 +80,59 @@ static int stat_dev(const char *a, const char *b, dev_t *dev)
   return sa.st_dev == sb.st_dev;
 }
 
+static int is_within(const char *path, const char *dir)
+{
+  size_t dl = strlen(dir);
+  if (dl > 0 && dir[dl - 1] == '/')
+    dl--;
+  if (dl == 0)
+    return path[0] == '/';
+  if (strncmp(path, dir, dl) != 0)
+    return 0;
+  return path[dl] == '\0' || path[dl] == '/';
+}
+
+static int on_overlayfs(const char *path)
+{
+  struct statfs sfs;
+  if (sys_statfs(path, &sfs) != 0)
+    return 0;
+  return (unsigned long)sfs.f_type == (unsigned long)OVERLAYFS_SUPER_MAGIC;
+}
+
+static int needs_loopback(const char *ap, const char *lowerdir, dev_t *lower_dev)
+{
+  struct stat ls;
+  if (stat(lowerdir, &ls) != 0)
+    return -1;
+  if (lower_dev)
+    *lower_dev = ls.st_dev;
+  if (is_within(ap, lowerdir))
+    return stat_dev(lowerdir, ap, NULL);
+  return on_overlayfs(ap) ? 1 : 0;
+}
+
 // cppcheck-suppress staticFunction
 int __same_fs_detect(const char *lowerdir, const char *upperdir, dev_t *lower_dev)
 {
-  char *gp = grandparent(upperdir);
-  if (!gp)
-    return 0;
-  if (resolve_existing_parent(gp) != 0) {
-    mem_free(gp);
+  /* A loopback is required when the appdir would conflict with the lowerdir:
+   * either the upperdir lands inside the lowerdir tree on the same filesystem
+   * (the kernel rejects an upperdir that is a descendant of the lowerdir), or
+   * the appdir sits on an overlayfs already (overlay-on-overlay is not
+   * supported). An appdir that is a sibling of the lowerdir on an ordinary
+   * filesystem, or that already sits on its own mount, needs no loopback. */
+  char *ap = mem_strdup(upperdir);
+  if (!ap)
+    return -1;
+  char *slash = strrchr(ap, '/');
+  if (slash)
+    *slash = '\0';
+  if (resolve_existing_parent(ap) != 0) {
+    mem_free(ap);
     return -1;
   }
-  int r = stat_dev(lowerdir, gp, lower_dev);
-  mem_free(gp);
+  int r = needs_loopback(ap, lowerdir, lower_dev);
+  mem_free(ap);
   return r;
 }
 
@@ -198,10 +245,22 @@ static int setup_ext4_img(const char *img)
 
 static int setup_ext4_loopback(appdir_t * dirs, const loop_t * lp, int keep_work);
 
+static int require_real_dir(const char *path)
+{
+  int r = sys_isdir_nofollow(path);
+  if (r == 1)
+    return 0;
+  if (r == 0)
+    fprintf(stderr, "cage: refusing to mount over symlink %s\n", path);
+  return -1;
+}
+
 static int use_provisioned_loopback(appdir_t *dirs, const loop_t *lp, dev_t root_dev, int keep_work)
 {
   struct stat mnt_st;
-  if (stat(lp->loopdir, &mnt_st) != 0)
+  if (lstat(lp->loopdir, &mnt_st) != 0)
+    return -1;
+  if (require_real_dir(lp->loopdir) != 0)
     return -1;
   if (mnt_st.st_dev == root_dev) {
     fprintf(stderr, "cage: ext4 loopback on same filesystem\n");
@@ -216,14 +275,14 @@ static int use_provisioned_loopback(appdir_t *dirs, const loop_t *lp, dev_t root
 static int ensure_ext4_mounted(appdir_t *dirs, const loop_t *lp, dev_t root_dev, int keep_work)
 {
   struct stat mnt_st;
-  if (stat(lp->loopdir, &mnt_st) == 0 && mnt_st.st_dev != root_dev) {
-    return set_loop_appdir(dirs, lp, keep_work);
-  }
-  if (stat(lp->loopdir, &mnt_st) != 0) {
-    if (io_mkdir(lp->loopdir) != 0) {
-      fprintf(stderr, "cage: failed to create mount point %s\n", lp->loopdir);
+  if (lstat(lp->loopdir, &mnt_st) == 0) {
+    if (require_real_dir(lp->loopdir) != 0)
       return -1;
-    }
+    if (mnt_st.st_dev != root_dev)
+      return set_loop_appdir(dirs, lp, keep_work);
+  } else if (io_mkdir(lp->loopdir) != 0) {
+    fprintf(stderr, "cage: failed to create mount point %s\n", lp->loopdir);
+    return -1;
   }
   return setup_ext4_loopback(dirs, lp, keep_work);
 }

@@ -137,18 +137,37 @@ int netlink_put_string(void *buf, size_t cap, size_t *off, int type, const char 
   return 0;
 }
 
-size_t netlink_nest_start(void *buf, size_t *off, int type)
+int netlink_nest_start(void *buf, size_t cap, size_t *off, int type, size_t *start)
 {
+  if (*off + sizeof(struct nlattr) > cap)
+    return -1;
   struct nlattr *attr = (struct nlattr *)((char *)buf + *off);
   attr->nla_type = (uint16_t) type;
+  *start = *off;
   *off += sizeof(struct nlattr);
-  return *off - sizeof(struct nlattr);
+  return 0;
 }
 
 void netlink_nest_end(void *buf, size_t start, const size_t *off)
 {
   struct nlattr *attr = (struct nlattr *)((char *)buf + start);
   attr->nla_len = (uint16_t) (*off - start);
+}
+
+// cppcheck-suppress staticFunction
+int netlink_ack_result(const void *ack, size_t alen)
+{
+  if (alen < (size_t)NLMSG_HDRLEN)
+    return -1;
+  const struct nlmsghdr *ah = (const struct nlmsghdr *)ack;
+  if (!NLMSG_OK(ah, alen))
+    return -1;
+  if (ah->nlmsg_type != NLMSG_ERROR)
+    return 0;
+  if (ah->nlmsg_len < NLMSG_LENGTH(sizeof(struct nlmsgerr)))
+    return -1;
+  const struct nlmsgerr *e = (const struct nlmsgerr *)NLMSG_DATA(ah);
+  return e->error == 0 ? 0 : -1;
 }
 
 int netlink_send_ack(int fd, const void *buf, size_t len)
@@ -159,10 +178,5 @@ int netlink_send_ack(int fd, const void *buf, size_t len)
   size_t alen;
   if (netlink_recv(fd, ack, sizeof(ack), &alen) < 0)
     return -1;
-  const struct nlmsghdr *ah = (const struct nlmsghdr *)ack;
-  if (ah->nlmsg_type == NLMSG_ERROR) {
-    const struct nlmsgerr *e = (const struct nlmsgerr *)NLMSG_DATA(ah);
-    return e->error == 0 ? 0 : -1;
-  }
-  return 0;
+  return netlink_ack_result(ack, alen);
 }

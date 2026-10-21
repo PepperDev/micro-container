@@ -7,18 +7,19 @@
 
 #define APPDIR_BASE  "/var/lib/cage"
 
-static void join(char *dst, size_t size, const char *base, const char *leaf)
+static int join(char *dst, size_t size, const char *base, const char *leaf)
 {
   size_t blen = strlen(base);
   size_t llen = strlen(leaf);
   size_t need = blen + 1 + llen + 1;
 
   if (need > size)
-    return;
+    return -1;
 
   memcpy(dst, base, blen);
   dst[blen] = '/';
   memcpy(dst + blen + 1, leaf, llen + 1);
+  return 0;
 }
 
 static int set_appdir(appdir_t *d, const cage_config_t *cfg)
@@ -49,11 +50,9 @@ static int set_dir(char *dst, size_t dst_size, const char *src, const char *appd
     memcpy(dst, src, len + 1);
     return 0;
   }
-  if (suffix) {
-    join(dst, dst_size, appdir, suffix);
-  } else {
-    memcpy(dst, "/", 2);
-  }
+  if (suffix)
+    return join(dst, dst_size, appdir, suffix);
+  memcpy(dst, "/", 2);
   return 0;
 }
 
@@ -62,8 +61,11 @@ int resolve_appdir(const cage_config_t *cfg, appdir_t *d)
   memset(d, 0, sizeof(*d));
   if (set_appdir(d, cfg) != 0)
     return -1;
-  set_dir(d->upperdir, sizeof(d->upperdir), cfg->upperdir, d->appdir, "upper");
-  set_dir(d->workdir, sizeof(d->workdir), cfg->workdir, d->appdir, "work");
-  set_dir(d->lowerdir, sizeof(d->lowerdir), cfg->lowerdir, d->appdir, NULL);
+  if (set_dir(d->upperdir, sizeof(d->upperdir), cfg->upperdir, d->appdir, "upper") != 0)
+    return -1;
+  if (set_dir(d->workdir, sizeof(d->workdir), cfg->workdir, d->appdir, "work") != 0)
+    return -1;
+  if (set_dir(d->lowerdir, sizeof(d->lowerdir), cfg->lowerdir, d->appdir, NULL) != 0)
+    return -1;
   return 0;
 }

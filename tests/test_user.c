@@ -197,6 +197,32 @@ static void test_empty_user_str(void)
   user_free(u);
 }
 
+static void test_uid_overflow_rejected(void)
+{
+  user_t *u = user_new("4294967296", NULL, NULL);
+  ASSERT_NULL(u);
+}
+
+static void test_uid_way_overflow_rejected(void)
+{
+  user_t *u = user_new("99999999999999999999", NULL, NULL);
+  ASSERT_NULL(u);
+}
+
+static void test_gid_overflow_rejected(void)
+{
+  user_t *u = user_new("0", "4294967296", NULL);
+  ASSERT_NULL(u);
+}
+
+static void test_uid_max_accepted(void)
+{
+  user_t *u = user_new("4294967295", NULL, NULL);
+  ASSERT_NOT_NULL(u);
+  ASSERT_EQ(get_uid(u), 4294967295u);
+  user_free(u);
+}
+
 static void test_numeric_uid_not_in_passwd(void)
 {
   char *root = test_temp_root();
@@ -482,6 +508,10 @@ SUITE(user)
   RUN_TEST(numeric_uid_with_group_token_forces_passwd);
   RUN_TEST(no_passwd_file);
   RUN_TEST(empty_user_str);
+  RUN_TEST(uid_overflow_rejected);
+  RUN_TEST(uid_way_overflow_rejected);
+  RUN_TEST(gid_overflow_rejected);
+  RUN_TEST(uid_max_accepted);
   RUN_TEST(numeric_uid_not_in_passwd);
   RUN_TEST(root_user);
   RUN_TEST(root_user_no_passwd);
