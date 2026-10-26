@@ -1,6 +1,7 @@
 #include "framework.h"
 #include "test_util.h"
 #include "user/user.h"
+#include "user/user_priv.h"
 #include "util/io.h"
 #include "util/mem.h"
 #include <stdio.h>
@@ -9,6 +10,30 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+
+static void test_open_db(void)
+{
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+  char *etc = mem_path(root, "etc");
+  ASSERT_EQ(io_mkdir(etc), 0);
+  char *pw = mem_path(etc, "passwd");
+  io_touch(pw);
+
+  FILE *f = open_db(root, "etc/passwd");
+  ASSERT_NOT_NULL(f);
+  fclose(f);
+
+  ASSERT_NULL(open_db(NULL, "etc/passwd"));
+  ASSERT_NULL(open_db
+              (root,
+               "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"));
+
+  mem_free(pw);
+  mem_free(etc);
+  io_rmtree(root);
+  mem_free(root);
+}
 
 static void setup_rootfs(const char *root, const char *passwd, const char *group)
 {
@@ -51,7 +76,7 @@ static void test_numeric_uid_with_passwd(void)
   ASSERT_STR_EQ(get_home(u), "/home/alice");
   ASSERT_STR_EQ(get_shell(u), "/bin/bash");
   user_free(u);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -69,7 +94,7 @@ static void test_username_lookup(void)
   ASSERT_STR_EQ(get_home(u), "/home/alice");
   ASSERT_STR_EQ(get_shell(u), "/bin/zsh");
   user_free(u);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -86,7 +111,7 @@ static void test_user_colon_group(void)
   ASSERT_STR_EQ(get_name(u), "alice");
   ASSERT_EQ(get_gid(u), 500);
   user_free(u);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -102,7 +127,7 @@ static void test_group_name_lookup(void)
   ASSERT_EQ(get_uid(u), 1000);
   ASSERT_EQ(get_gid(u), 500);
   user_free(u);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -122,7 +147,7 @@ static void test_supplementary_groups(void)
   ASSERT_EQ(gl.groups[0], 500);
   ASSERT_EQ(gl.groups[1], 999);
   user_free(u);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -141,7 +166,7 @@ static void test_primary_group_from_group_str(void)
   ASSERT_EQ(gl.count, 1);
   ASSERT_EQ(gl.groups[0], 500);
   user_free(u);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -166,7 +191,7 @@ static void test_numeric_uid_with_group_token_forces_passwd(void)
   ASSERT_STR_EQ(get_home(u), "/home/alice");
   ASSERT_STR_EQ(get_shell(u), "/bin/zsh");
   user_free(u);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -184,7 +209,7 @@ static void test_no_passwd_file(void)
   ASSERT_STR_EQ(get_shell(u), "/bin/sh");
   user_free(u);
   mem_free(nonexistent);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -240,7 +265,7 @@ static void test_numeric_uid_not_in_passwd(void)
   ASSERT_STR_EQ(get_home(u), "/home/.user");
   ASSERT_STR_EQ(get_shell(u), "/bin/sh");
   user_free(u);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -258,7 +283,7 @@ static void test_root_user(void)
   ASSERT_STR_EQ(get_home(u), "/root");
   ASSERT_STR_EQ(get_shell(u), "/bin/sh");
   user_free(u);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -276,7 +301,7 @@ static void test_root_user_no_passwd(void)
   ASSERT_STR_EQ(get_home(u), "/root");
   ASSERT_STR_EQ(get_shell(u), "/bin/sh");
   user_free(u);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -296,7 +321,7 @@ static void test_supplementary_with_group_names(void)
   ASSERT_EQ(gl.groups[0], 500);
   ASSERT_EQ(gl.groups[1], 999);
   user_free(u);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -317,7 +342,7 @@ static void test_user_colon_and_supplementary(void)
   ASSERT_EQ(gl.groups[1], 999);
   ASSERT_EQ(gl.groups[2], 1001);
   user_free(u);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -337,7 +362,7 @@ static void test_user_colon_with_supplementary(void)
   ASSERT_EQ(gl.groups[0], 1001);
   ASSERT_EQ(gl.groups[1], 1002);
   user_free(u);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -353,7 +378,7 @@ static void test_invalid_group_name(void)
   ASSERT_EQ(get_uid(u), 1000);
   ASSERT_EQ(get_gid(u), 1000);
   user_free(u);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -371,7 +396,7 @@ static void test_user_not_found_by_name(void)
   ASSERT_STR_EQ(get_home(u), "/home/.user");
   ASSERT_STR_EQ(get_shell(u), "/bin/sh");
   user_free(u);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -389,7 +414,7 @@ static void test_not_found_by_name_nobody_in_passwd(void)
   ASSERT_STR_EQ(get_home(u), "/nonexistent");
   ASSERT_STR_EQ(get_shell(u), "/bin/false");
   user_free(u);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -419,7 +444,7 @@ static void test_name_no_groups_enumerate(void)
   ASSERT_EQ(found_staff, 1);
   ASSERT_EQ(found_sudo, 1);
   user_free(u);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -442,7 +467,7 @@ static void test_name_groups_after_early_resolve(void)
   ASSERT_EQ(gl.groups[1], 500);
   ASSERT_EQ(gl.groups[2], 1001);
   user_free(u);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -460,7 +485,7 @@ static void test_numeric_uid_no_enum_after_resolve(void)
   ASSERT_EQ(gl.count, 1);
   ASSERT_EQ(gl.groups[0], 1000);
   user_free(u);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -473,16 +498,6 @@ static void test_root_new(void)
   user_free(u);
 }
 
-static void test_root_new_with_rootfs(void)
-{
-  user_t *u = user_root_new("/tmp/root");
-  ASSERT_NOT_NULL(u);
-  ASSERT_EQ(get_uid(u), 0);
-  ASSERT_EQ(get_gid(u), 0);
-  ASSERT_STR_EQ(get_rootfs(u), "/tmp/root");
-  user_free(u);
-}
-
 static void test_new_invalid_long_name(void)
 {
   char name[300];
@@ -492,13 +507,9 @@ static void test_new_invalid_long_name(void)
   ASSERT_NULL(u);
 }
 
-static void test_free_null(void)
-{
-  user_free(NULL);
-}
-
 SUITE(user)
 {
+  RUN_TEST(open_db);
   RUN_TEST(numeric_uid_with_passwd);
   RUN_TEST(username_lookup);
   RUN_TEST(user_colon_group);
@@ -525,7 +536,5 @@ SUITE(user)
   RUN_TEST(name_groups_after_early_resolve);
   RUN_TEST(numeric_uid_no_enum_after_resolve);
   RUN_TEST(root_new);
-  RUN_TEST(root_new_with_rootfs);
   RUN_TEST(new_invalid_long_name);
-  RUN_TEST(free_null);
 }

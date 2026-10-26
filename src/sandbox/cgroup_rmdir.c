@@ -1,4 +1,5 @@
 #include "cgroup.h"
+#include "../util/io.h"
 // cppcheck-suppress missingIncludeSystem
 #include <string.h>
 // cppcheck-suppress missingIncludeSystem
@@ -11,6 +12,8 @@
 #include <limits.h>
 // cppcheck-suppress missingIncludeSystem
 #include <dirent.h>
+// cppcheck-suppress missingIncludeSystem
+#include <sys/stat.h>
 
 static int is_dot_or_dotdot(const struct dirent *e)
 {
@@ -25,7 +28,10 @@ static void rmdir_children(const char *path, DIR *d)
       continue;
     char child[PATH_MAX];
     snprintf(child, sizeof(child), "%s/%s", path, e->d_name);
-    if (e->d_type == DT_DIR)
+    struct stat st;
+    if (lstat(child, &st) != 0)
+      continue;
+    if (S_ISDIR(st.st_mode))
       cgroup_rmdir_recursive(child);
   }
 }
@@ -37,5 +43,13 @@ int cgroup_rmdir_recursive(const char *path)
     return errno == ENOENT ? 0 : -1;
   rmdir_children(path, d);
   closedir(d);
-  return rmdir(path) == 0 || errno == ENOENT ? 0 : -1;
+  if (rmdir(path) == 0) {
+    io_cache_invalidate(path);
+    return 0;
+  }
+  if (errno == ENOENT) {
+    io_cache_invalidate(path);
+    return 0;
+  }
+  return -1;
 }

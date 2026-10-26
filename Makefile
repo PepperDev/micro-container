@@ -83,6 +83,7 @@ lint:
 	cppcheck --enable=all --check-level=exhaustive \
 	  -I src \
 	  --inline-suppr \
+	  --suppress=missingIncludeSystem \
 	  --error-exitcode=1 src/
 	@lizard -C 6 -L 40 -Ttoken_count=150 -a 5 -ENS src/
 	@lizard -C 6 -L 40 -Ttoken_count=150 -a 5 -ENS src/ 2>/dev/null | awk -v max=$(MAX_LOC_PER_FILE) 'BEGIN{in_data=0} /^=+/ {if(in_data)exit; in_data=1; next} in_data&&/^  NLOC/{next} in_data&&/^[-]+/{next} in_data&&/^$$/{next} in_data{nloc=$$1+0; loc=$$NF; n=split(loc,a,"@"); f=a[n]; t[f]+=nloc} END{ec=0; for(f in t){if(t[f]>max){printf "FAIL: %s has %d LOC (max %d)\n",f,t[f],max; ec=1}} exit ec}'
@@ -111,7 +112,7 @@ report: $(OBJ_DIR)/test_runner
 	if [ $$rc -eq 0 ]; then echo "  PASS  $$summary"; else echo "  FAIL  $$summary"; fi; \
 	echo ""; \
 	echo "=== cppcheck Offenders ==="; \
-	out=$$(cppcheck --enable=all --check-level=exhaustive $(shell find src -type d | sed 's/^/-I /') --inline-suppr --error-exitcode=1 src/ 2>&1) || rc=1; \
+	out=$$(cppcheck --enable=all --check-level=exhaustive $(shell find src -type d | sed 's/^/-I /') --inline-suppr --suppress=missingIncludeSystem --error-exitcode=1 src/ 2>&1) || rc=1; \
 	files=$$(echo "$$out" | grep '^src/' | sed 's/:.*//' | sort -u); \
 	if [ -z "$$files" ]; then echo "  PASS"; else echo "$$files" | sed 's/^/    /'; echo "  FAIL  $$(echo "$$files" | wc -l) file(s)"; fi; \
 	echo ""; \

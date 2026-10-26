@@ -40,66 +40,53 @@ static char **build_login_argv(const char *shell, char **out_argv0)
 
 static void fill_home_user(env_t *e, const user_t *u)
 {
-  env_map_ensure(&e->map, "HOME", get_home((user_t *) u));
-  env_map_ensure(&e->map, "USER", get_name((user_t *) u));
+  env_map_ensure(&e->map, "HOME", get_home(u));
+  env_map_ensure(&e->map, "USER", get_name(u));
 }
 
 static void fill_shell(env_t *e, const user_t *u)
 {
   if (e->guest_shell_override)
-    env_map_put(&e->map, "SHELL", get_shell((user_t *) u));
-}
-
-static char **fill_env(const user_t *u, env_t *e)
-{
-  fill_home_user(e, u);
-  fill_shell(e, u);
-  return env_map_build(&e->map, NULL);
-}
-
-static char **build_env_array(const user_t *user, env_t *env)
-{
-  return fill_env(user, env);
-}
-
-static const char *shell_from_env_shell(const env_t *env)
-{
-  return env_map_get(&env->map, "SHELL");
+    env_map_put(&e->map, "SHELL", get_shell(u));
 }
 
 static const char *pick_shell(const user_t *user, const env_t *env)
 {
-  const char *s = shell_from_env_shell(env);
-  return s ? s : get_shell((user_t *) user);
+  const char *s = env_map_get(&env->map, "SHELL");
+  return s ? s : get_shell(user);
 }
 
-static const char *try_dash_cmd(char **argv, const user_t *user, const env_t *env,
-                                char ***login_argv, char **login_argv0)
+struct launch_cmd {
+  const char *cmd;
+  char **argv;
+  char **login_argv;
+  char *login_argv0;
+};
+
+static int is_dash(char **argv)
 {
-  if (!argv || !argv[0] || strcmp(argv[0], "-") != 0)
-    return NULL;
-  const char *shell = pick_shell(user, env);
-  *login_argv = build_login_argv(shell, login_argv0);
-  if (!*login_argv)
-    return NULL;
-  return shell;
+  return argv && argv[0] && strcmp(argv[0], "-") == 0;
 }
 
-static const char *setup_command(const user_t *user, const env_t *env, char ***argv, char ***login_argv,
-                                 char **login_argv0)
+static int has_command(char **argv)
 {
-  const char *cmd = try_dash_cmd(*argv, user, env, login_argv, login_argv0);
-  if (cmd) {
-    *argv = *login_argv;
-    return cmd;
+  return argv && argv[0];
+}
+
+static struct launch_cmd prepare_command(const user_t *user, const env_t *env, char **argv)
+{
+  struct launch_cmd c = { NULL, argv, NULL, NULL };
+  if (has_command(argv) && !is_dash(argv)) {
+    c.cmd = argv[0];
+    return c;
   }
-  if (*argv && (*argv)[0])
-    return (*argv)[0];
-  *login_argv = build_login_argv(get_shell((user_t *) user), login_argv0);
-  if (!*login_argv)
-    return NULL;
-  *argv = *login_argv;
-  return get_shell((user_t *) user);
+  const char *shell = is_dash(argv) ? pick_shell(user, env) : get_shell(user);
+  c.login_argv = build_login_argv(shell, &c.login_argv0);
+  if (!c.login_argv)
+    return c;
+  c.argv = c.login_argv;
+  c.cmd = shell;
+  return c;
 }
 
 static int setup_cwd(const char *cwd)
@@ -117,13 +104,13 @@ static int setup_cwd(const char *cwd)
 
 static int do_priv_drop(const user_t *user)
 {
-  gid_t gid = get_gid((user_t *) user);
+  gid_t gid = get_gid(user);
   if (setregid(gid, gid) != 0)
     return -1;
-  group_list_t gl = get_groups((user_t *) user);
+  group_list_t gl = get_groups(user);
   if (sys_setgroups(gl.count, gl.groups) != 0)
     return -1;
-  uid_t uid = get_uid((user_t *) user);
+  uid_t uid = get_uid(user);
   if (setreuid(uid, uid) != 0)
     return -1;
   return 0;
@@ -148,19 +135,20 @@ static int launch_exec(const user_t *user, const char *cwd, const char *cmd, cha
 
 int launch_cage(const user_t *user, env_t *env, const char *cwd, char **argv)
 {
-  char *la0 = NULL, **la = NULL;
-  const char *command = setup_command(user, env, &argv, &la, &la0);
-  if (!command)
+  struct launch_cmd c = prepare_command(user, env, argv);
+  if (!c.cmd)
     return -1;
-  char **envp = build_env_array(user, env);
+  fill_home_user(env, user);
+  fill_shell(env, user);
+  char **envp = env_map_build(&env->map, NULL);
   if (!envp) {
-    free(la0);
-    free(la);
+    free(c.login_argv0);
+    free(c.login_argv);
     return -1;
   }
-  int r = launch_exec(user, cwd, command, argv, envp);
+  int r = launch_exec(user, cwd, c.cmd, c.argv, envp);
   free(envp);
-  free(la0);
-  free(la);
+  free(c.login_argv0);
+  free(c.login_argv);
   return r;
 }

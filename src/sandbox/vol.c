@@ -1,4 +1,5 @@
 #include "vol.h"
+#include "cli/args.h"
 #include "util/io.h"
 #include "util/syscall.h"
 // cppcheck-suppress missingIncludeSystem
@@ -28,6 +29,7 @@ static int set_target(vol_t *v, const char *spec, const char *colon)
   return 0;
 }
 
+// cppcheck-suppress staticFunction
 int parse_vol(vol_t *v, const char *spec)
 {
   memset(v, 0, sizeof(*v));
@@ -92,6 +94,17 @@ static int create_guest(const char *guest, int is_dir)
   if (is_dir == 1)
     return create_guest_file(guest);
   return -1;
+}
+
+int prepare_volumes(cage_config_t *cfg)
+{
+  for (size_t i = 0; i < cfg->volume_count; i++) {
+    if (parse_vol(&cfg->volumes_parsed[i], cfg->volumes[i]) != 0) {
+      fprintf(stderr, "cage: invalid volume spec: %s\n", cfg->volumes[i]);
+      return -1;
+    }
+  }
+  return 0;
 }
 
 int mount_user_volume(const vol_t *v, const char *root)

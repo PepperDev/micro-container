@@ -38,7 +38,7 @@ static void test_spawn_cage_existing_instance(void)
   ASSERT_EQ(spawn_cage(&cfg, 0), -1);
 
   mem_free(pf);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -102,7 +102,7 @@ static void test_spawn_cage_initscript(void)
   mem_free(marker);
   mem_free(appdir);
   mem_free(pf);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -135,7 +135,7 @@ static void test_spawn_cage_graphical(void)
 
   mem_free(appdir);
   mem_free(pf);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -168,7 +168,7 @@ static void test_spawn_cage_no_env_vars(void)
 
   mem_free(appdir);
   mem_free(pf);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -189,7 +189,7 @@ static void test_spawn_cage_early_root_prep_fails(void)
   ASSERT_EQ(spawn_cage(&cfg, 0), -1);
 
   mem_free(pf);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -218,7 +218,7 @@ static void test_spawn_cage_create_pidfile_fails(void)
   mem_free(appdir);
   mem_free(rodir);
   mem_free(ropf);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -249,7 +249,7 @@ static void test_spawn_cage_full_no_command(void)
   mem_free(upper);
   mem_free(appdir);
   mem_free(pf);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -284,7 +284,7 @@ static void test_spawn_cage_fork_fails(void)
   mem_free(upper);
   mem_free(appdir);
   mem_free(pf);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -305,7 +305,7 @@ static void test_spawn_cage_no_pidfile(void)
   ASSERT_EQ(r, -1);
 
   mem_free(appdir);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -421,7 +421,7 @@ static void test_spawn_cage_early_temp_root_removal(void)
   mem_free(fifo);
   mem_free(pf);
   mem_free(appdir);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -455,7 +455,7 @@ static void test_spawn_cage_child_dies_before_root_ready(void)
   mem_free(upper);
   mem_free(pf);
   mem_free(appdir);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 

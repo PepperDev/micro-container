@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <sys/stat.h>
 #include <sys/mount.h>
+#include <sched.h>
 #include <errno.h>
 
 /* === mount_bind tests === */
@@ -34,7 +35,7 @@ static void test_mount_bind_success(void)
   ASSERT_EQ(_mock_mount_count, 1);
 
   mem_free(bind);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -52,7 +53,7 @@ static void test_mount_bind_mount_fails(void)
   ASSERT_EQ(_mock_mount_count, 1);
 
   mem_free(bind);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -70,7 +71,7 @@ static void test_mount_bind_mkdir_fails(void)
   ASSERT_EQ(_mock_mount_count, 0);
 
   mem_free(block);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -90,7 +91,22 @@ static void test_mount_bind_bad_parent_perms(void)
 
   chmod(child, 0755);
   mem_free(child);
-  test_rmtree(root);
+  io_rmtree(root);
+  mem_free(root);
+}
+
+static void test_mount_dev_single_mount(void)
+{
+  mock_sys_reset();
+  _mock_mount_ret = 0;
+
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+
+  ASSERT_EQ(mount_dev(root), 0);
+  ASSERT_EQ(_mock_mount_count, 1);
+
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -219,7 +235,7 @@ static void test_prepare_overlay_success(void)
 
   mem_free(upper);
   mem_free(work);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -245,7 +261,7 @@ static void test_prepare_overlay_upper_mkdir_fails(void)
 
   mem_free(upper);
   mem_free(wk);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -271,7 +287,7 @@ static void test_prepare_overlay_workdir_mkdir_fails(void)
 
   mem_free(work);
   mem_free(up);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -296,7 +312,7 @@ static void test_prepare_overlay_mount_fails(void)
 
   mem_free(upper);
   mem_free(work);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -323,7 +339,7 @@ static void test_prepare_overlay_upper_on_overlayfs(void)
 
   mem_free(upper);
   mem_free(work);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -350,7 +366,7 @@ static void test_prepare_overlay_enodev_retry(void)
 
   mem_free(upper);
   mem_free(work);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -367,7 +383,7 @@ static void test_mount_fs_type_success(void)
   ASSERT_EQ(mount_fs_type(root, "proc", "proc", MS_NOSUID, NULL), 0);
   ASSERT_EQ(_mock_mount_count, 1);
 
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -385,7 +401,7 @@ static void test_mount_fs_type_mkdir_fails(void)
   ASSERT_EQ(_mock_mount_count, 0);
 
   mem_free(block);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -400,7 +416,7 @@ static void test_mount_fs_type_mount_fails(void)
   ASSERT_EQ(mount_fs_type(root, "proc", "proc", MS_NOSUID, NULL), -1);
   ASSERT_EQ(_mock_mount_count, 1);
 
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -415,7 +431,7 @@ static void test_mount_fs_type_with_data(void)
   ASSERT_EQ(mount_fs_type(root, "run", "tmpfs", MS_NOSUID | MS_NOEXEC, "mode=0755"), 0);
   ASSERT_EQ(_mock_mount_count, 1);
 
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -435,7 +451,7 @@ static void test_mount_volumes_none(void)
 
   ASSERT_EQ(mount_volumes(root, &cfg), 0);
 
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -452,9 +468,9 @@ static void test_mount_volumes_invalid_spec(void)
   cfg.volumes[0] = ":";
   cfg.volume_count = 1;
 
-  ASSERT_EQ(mount_volumes(root, &cfg), -1);
+  ASSERT_EQ(prepare_volumes(&cfg), -1);
 
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -475,10 +491,11 @@ static void test_mount_volumes_success(void)
   cfg.volumes[0] = vol;
   cfg.volume_count = 1;
 
+  ASSERT_EQ(prepare_volumes(&cfg), 0);
   ASSERT_EQ(mount_volumes(root, &cfg), 0);
 
   mem_free(host);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -495,9 +512,10 @@ static void test_mount_volumes_mount_fails(void)
   cfg.volumes[0] = "/nonexistent-xyz-vol:mnt";
   cfg.volume_count = 1;
 
+  ASSERT_EQ(prepare_volumes(&cfg), 0);
   ASSERT_EQ(mount_volumes(root, &cfg), -1);
 
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -522,11 +540,12 @@ static void test_mount_volumes_multiple(void)
   cfg.volumes[1] = v2;
   cfg.volume_count = 2;
 
+  ASSERT_EQ(prepare_volumes(&cfg), 0);
   ASSERT_EQ(mount_volumes(root, &cfg), 0);
 
   mem_free(h1);
   mem_free(h2);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -538,25 +557,9 @@ static void test_ns_setup_success(void)
   _mock_unshare_ret = 0;
   _mock_mount_ret = 0;
 
-  cage_config_t cfg;
-  cage_config_init(&cfg);
-
-  ASSERT_EQ(ns_setup(&cfg), 0);
+  ASSERT_EQ(ns_setup(), 0);
   ASSERT_EQ(_mock_unshare_count, 1);
   ASSERT_EQ(_mock_mount_count, 0);
-}
-
-static void test_ns_setup_cgroup(void)
-{
-  mock_sys_reset();
-  _mock_unshare_ret = 0;
-
-  cage_config_t cfg;
-  cage_config_init(&cfg);
-  cfg.unshare_cgroup = 1;
-
-  ASSERT_EQ(ns_setup(&cfg), 0);
-  ASSERT_EQ(_mock_unshare_count, 1);
 }
 
 static void test_ns_setup_unshare_fails(void)
@@ -564,10 +567,7 @@ static void test_ns_setup_unshare_fails(void)
   mock_sys_reset();
   _mock_unshare_ret = -1;
 
-  cage_config_t cfg;
-  cage_config_init(&cfg);
-
-  ASSERT_EQ(ns_setup(&cfg), -1);
+  ASSERT_EQ(ns_setup(), -1);
   ASSERT_EQ(_mock_unshare_count, 1);
   ASSERT_EQ(_mock_mount_count, 0);
 }
@@ -578,7 +578,7 @@ static void test_mount_ns_setup_private(void)
   _mock_unshare_ret = 0;
   _mock_mount_ret = 0;
 
-  ASSERT_EQ(mount_ns_setup(0), 0);
+  ASSERT_EQ(mount_ns_setup(0, 0, 0), 0);
   ASSERT_EQ(_mock_unshare_count, 1);
   ASSERT_EQ(_mock_mount_count, 1);
 }
@@ -589,8 +589,48 @@ static void test_mount_ns_setup_root_private(void)
   _mock_unshare_ret = 0;
   _mock_mount_ret = 0;
 
-  ASSERT_EQ(mount_ns_setup(1), 0);
+  ASSERT_EQ(mount_ns_setup(1, 0, 0), 0);
   ASSERT_EQ(_mock_unshare_count, 1);
+  ASSERT_EQ(_mock_mount_count, 0);
+}
+
+static void test_mount_ns_setup_cgroup(void)
+{
+  mock_sys_reset();
+  _mock_unshare_ret = 0;
+  _mock_mount_ret = 0;
+
+  ASSERT_EQ(mount_ns_setup(1, 1, 0), 0);
+  ASSERT_EQ(_mock_unshare_count, 1);
+  ASSERT_EQ(_mock_mount_count, 0);
+  ASSERT(_mock_unshare_flags & CLONE_NEWNS);
+  ASSERT(_mock_unshare_flags & CLONE_NEWCGROUP);
+}
+
+static void test_mount_ns_setup_no_cgroup(void)
+{
+  mock_sys_reset();
+  _mock_unshare_ret = 0;
+  _mock_mount_ret = 0;
+
+  ASSERT_EQ(mount_ns_setup(1, 0, 0), 0);
+  ASSERT_EQ(_mock_unshare_count, 1);
+  ASSERT(_mock_unshare_flags & CLONE_NEWNS);
+  ASSERT(!(_mock_unshare_flags & CLONE_NEWCGROUP));
+}
+
+static void test_mount_ns_setup_net(void)
+{
+  mock_sys_reset();
+  _mock_unshare_ret = 0;
+  _mock_mount_ret = 0;
+
+  ASSERT_EQ(mount_ns_setup(1, 0, 1), 0);
+  ASSERT_EQ(_mock_unshare_count, 1);
+  ASSERT(_mock_unshare_flags & CLONE_NEWNS);
+  ASSERT(_mock_unshare_flags & CLONE_NEWNET);
+  ASSERT(_mock_unshare_flags & CLONE_NEWUTS);
+  ASSERT(!(_mock_unshare_flags & CLONE_NEWCGROUP));
   ASSERT_EQ(_mock_mount_count, 0);
 }
 
@@ -599,7 +639,7 @@ static void test_mount_ns_setup_unshare_fails(void)
   mock_sys_reset();
   _mock_unshare_ret = -1;
 
-  ASSERT_EQ(mount_ns_setup(0), -1);
+  ASSERT_EQ(mount_ns_setup(0, 0, 0), -1);
   ASSERT_EQ(_mock_unshare_count, 1);
   ASSERT_EQ(_mock_mount_count, 0);
 }
@@ -610,7 +650,7 @@ static void test_mount_ns_setup_mount_fails(void)
   _mock_unshare_ret = 0;
   _mock_mount_ret = -1;
 
-  ASSERT_EQ(mount_ns_setup(0), -1);
+  ASSERT_EQ(mount_ns_setup(0, 0, 0), -1);
   ASSERT_EQ(_mock_unshare_count, 1);
   ASSERT_EQ(_mock_mount_count, 1);
 }
@@ -619,14 +659,15 @@ static void test_mount_ns_setup_mount_fails(void)
 
 static void test_same_fs_detect_grandparent_null(void)
 {
+  mock_sys_reset();
   _mock_same_fs_ret = -1;
   ASSERT_EQ(same_fs_detect("/tmp", "/", NULL), 0);
   ASSERT_EQ(same_fs_detect("/tmp", "/single", NULL), 0);
-  _mock_same_fs_ret = 0;
 }
 
 static void test_same_fs_detect_same_fs(void)
 {
+  mock_sys_reset();
   _mock_same_fs_ret = -1;
   char *root = test_temp_root();
   ASSERT_NOT_NULL(root);
@@ -640,21 +681,20 @@ static void test_same_fs_detect_same_fs(void)
 
   mem_free(gc);
   mem_free(sub);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
-  _mock_same_fs_ret = 0;
 }
 
 static void test_same_fs_detect_different_fs(void)
 {
-  _mock_same_fs_ret = -1;
-  int r = same_fs_detect("/tmp", "/var", NULL);
-  ASSERT_NE(r, 1);
+  mock_sys_reset();
   _mock_same_fs_ret = 0;
+  ASSERT_EQ(same_fs_detect("/tmp", "/var", NULL), 0);
 }
 
 static void test_same_fs_detect_lower_not_parent(void)
 {
+  mock_sys_reset();
   /* An appdir in a sibling directory of the lowerdir shares the filesystem
    * but is not inside the lower tree, so no loopback is needed. */
   _mock_same_fs_ret = -1;
@@ -670,13 +710,13 @@ static void test_same_fs_detect_lower_not_parent(void)
   mem_free(upper);
   mem_free(appdir);
   mem_free(lower);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
-  _mock_same_fs_ret = 0;
 }
 
 static void test_same_fs_detect_lower_parent_same_fs(void)
 {
+  mock_sys_reset();
   /* The appdir is inside the lowerdir tree on the same filesystem: this is
    * the conflict that requires a loopback. */
   _mock_same_fs_ret = -1;
@@ -689,95 +729,8 @@ static void test_same_fs_detect_lower_parent_same_fs(void)
   ASSERT_EQ(r, 1);
   mem_free(upper);
   mem_free(appdir);
-  test_rmtree(lower);
+  io_rmtree(lower);
   mem_free(lower);
-  _mock_same_fs_ret = 0;
-}
-
-/* === make_relocated_dirs === */
-
-static void test_make_relocated_dirs_success(void)
-{
-  char *root = test_temp_root();
-  ASSERT_NOT_NULL(root);
-
-  appdir_t dirs;
-  memset(&dirs, 0, sizeof(dirs));
-
-  int r = make_relocated_dirs(&dirs, root);
-  ASSERT_EQ(r, 0);
-
-  test_rmtree(root);
-  mem_free(root);
-}
-
-static void test_make_relocated_dirs_appdir_fails(void)
-{
-  char *root = test_temp_root();
-  ASSERT_NOT_NULL(root);
-
-  char *block = mem_path(root, "default");
-  io_touch(block);
-
-  appdir_t dirs;
-  memset(&dirs, 0, sizeof(dirs));
-  snprintf(dirs.appdir, sizeof(dirs.appdir), "%s/default", root);
-
-  int r = make_relocated_dirs(&dirs, root);
-  ASSERT_EQ(r, -1);
-
-  mem_free(block);
-  test_rmtree(root);
-  mem_free(root);
-}
-
-static void test_make_relocated_dirs_upperdir_fails(void)
-{
-  char *root = test_temp_root();
-  ASSERT_NOT_NULL(root);
-
-  char *block = mem_path(root, "default");
-  io_mkdir(block);
-  char *upper = mem_path(root, "default/upper");
-  io_touch(upper);
-
-  appdir_t dirs;
-  memset(&dirs, 0, sizeof(dirs));
-  snprintf(dirs.appdir, sizeof(dirs.appdir), "%s/default", root);
-
-  int r = make_relocated_dirs(&dirs, root);
-  ASSERT_EQ(r, -1);
-
-  mem_free(upper);
-  mem_free(block);
-  test_rmtree(root);
-  mem_free(root);
-}
-
-static void test_make_relocated_dirs_workdir_fails(void)
-{
-  char *root = test_temp_root();
-  ASSERT_NOT_NULL(root);
-
-  char *block = mem_path(root, "default");
-  io_mkdir(block);
-  char *upper = mem_path(root, "default/upper");
-  io_mkdir(upper);
-  char *work = mem_path(root, "default/work");
-  io_touch(work);
-
-  appdir_t dirs;
-  memset(&dirs, 0, sizeof(dirs));
-  snprintf(dirs.appdir, sizeof(dirs.appdir), "%s/default", root);
-
-  int r = make_relocated_dirs(&dirs, root);
-  ASSERT_EQ(r, -1);
-
-  mem_free(work);
-  mem_free(upper);
-  mem_free(block);
-  test_rmtree(root);
-  mem_free(root);
 }
 
 /* === derive_loopdir === */
@@ -868,9 +821,8 @@ static void test_handle_same_fs_symlink_loopdir_fails(void)
   mem_free(real);
   mem_free(app);
   mem_free(sub);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
-  _mock_same_fs_ret = 0;
 }
 
 static void test_handle_same_fs_custom_upper_fails(void)
@@ -902,9 +854,8 @@ static void test_handle_same_fs_custom_upper_fails(void)
   mem_free(upper);
   mem_free(app);
   mem_free(sub);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
-  _mock_same_fs_ret = 0;
 }
 
 static void test_handle_same_fs_custom_work_outside_fails(void)
@@ -937,9 +888,8 @@ static void test_handle_same_fs_custom_work_outside_fails(void)
   mem_free(upper);
   mem_free(app);
   mem_free(sub);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
-  _mock_same_fs_ret = 0;
 }
 
 /* === io_exists EACCES = not found: resolve_existing_parent walks up === */
@@ -965,11 +915,10 @@ static void test_same_fs_detect_inaccessible_subdir(void)
   ASSERT_EQ(r, 1);
 
   chmod(path, 0755);
-  _mock_same_fs_ret = 0;
   mem_free(target);
   mem_free(deep);
   mem_free(sub);
-  test_rmtree(path);
+  io_rmtree(path);
   mem_free(path);
 }
 
@@ -1007,9 +956,9 @@ static void test_mount_all_success(void)
   cage_config_init(&cfg);
 
   ASSERT_EQ(mount_all(root, &cfg, -2), 0);
-  ASSERT_EQ(_mock_mount_count, 9);
+  ASSERT_EQ(_mock_mount_count, 8);
 
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -1027,7 +976,7 @@ static void test_mount_all_proc_fails(void)
 
   ASSERT_EQ(mount_all(root, &cfg, -2), -1);
 
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -1045,7 +994,7 @@ static void test_mount_all_dev_fails(void)
 
   ASSERT_EQ(mount_all(root, &cfg, -2), -1);
 
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -1059,6 +1008,7 @@ SUITE(mount)
   RUN_TEST(mount_bind_mount_fails);
   RUN_TEST(mount_bind_mkdir_fails);
   RUN_TEST(mount_bind_bad_parent_perms);
+  RUN_TEST(mount_dev_single_mount);
 
   RUN_TEST(strip_trailing_slash_none);
   RUN_TEST(strip_trailing_slash_single);
@@ -1095,10 +1045,12 @@ SUITE(mount)
   RUN_TEST(mount_volumes_multiple);
 
   RUN_TEST(ns_setup_success);
-  RUN_TEST(ns_setup_cgroup);
   RUN_TEST(ns_setup_unshare_fails);
   RUN_TEST(mount_ns_setup_private);
   RUN_TEST(mount_ns_setup_root_private);
+  RUN_TEST(mount_ns_setup_cgroup);
+  RUN_TEST(mount_ns_setup_no_cgroup);
+  RUN_TEST(mount_ns_setup_net);
   RUN_TEST(mount_ns_setup_unshare_fails);
   RUN_TEST(mount_ns_setup_mount_fails);
 
@@ -1107,11 +1059,6 @@ SUITE(mount)
   RUN_TEST(same_fs_detect_different_fs);
   RUN_TEST(same_fs_detect_lower_not_parent);
   RUN_TEST(same_fs_detect_lower_parent_same_fs);
-
-  RUN_TEST(make_relocated_dirs_success);
-  RUN_TEST(make_relocated_dirs_appdir_fails);
-  RUN_TEST(make_relocated_dirs_upperdir_fails);
-  RUN_TEST(make_relocated_dirs_workdir_fails);
 
   RUN_TEST(derive_loopdir_default);
   RUN_TEST(derive_loopdir_multilevel);

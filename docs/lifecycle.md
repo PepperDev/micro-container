@@ -17,7 +17,7 @@ define spawn cage:
   parse args → fill config struct
 
   if kill mode "-k":
-    read "${pidfile}", unlink → SIGTERM → SIGKILL, exit   # unlink first; zombie target skips grace
+    read "${pidfile}", SIGTERM → SIGKILL, wait for exit, unlink, exit   # unlink after target gone; zombie target skips grace
 
   if existing instance "${pidfile}":   # see §Re-entry Flow
     call re-entry flow                  # rejoin: setns, fork, child execve, parent waitpid
@@ -30,7 +30,7 @@ Steps 1–4 below describe CLI startup. Everything after step 4 is covered
 in detail by the sub-sections that follow.
 
 1. **Parse** — Read CLI arguments with getopt(3) and fill the config struct.
-2. **Kill** — If -k is given, read the pidfile, remove it first (so concurrent runs stop re-entering the dying session), then send SIGTERM (then SIGKILL after timeout) and exit; an unreaped-zombie target skips the grace wait.
+2. **Kill** — If -k is given, read the pidfile, send SIGTERM (then SIGKILL after timeout), wait for the process to be confirmed gone, then unlink the pidfile and exit; pidfile absence therefore means the session is gone. An unreaped-zombie target skips the grace wait.
 3. **Directories** — Compute appdir based on -a and -n. Resolve upperdir (-U), workdir (-w), and lowerdir (-l) defaults.
 4. **Ext4 image** — If lowerdir is a parent directory on the same filesystem (a custom -U fails; a custom -w outside the derived loopdir fails — rule 3), derive the loopdir from the appdir's parent plus a -loop suffix (kept when it already ends in -loop), e.g. /var/lib/cage → /var/lib/cage-loop; create a 10G sparse ext4 image at ${loopdir}.img, mount it at ${loopdir}, and use it as the application base. (see §Samefs / Ext4 Loopback Flow)
 
@@ -53,17 +53,17 @@ define container process:
   # prepare mount namespace
   mkdtemp "/tmp/cage-XXXXXX"                     # see §Temp Root Cleanup
   map "root-ready" futex (MAP_SHARED)            # see §Temp Root Cleanup
-  # CLONE_NEWCGROUP only when "-C" is given
-  unshare CLONE_NEWPID [| CLONE_NEWCGROUP]
+  unshare CLONE_NEWPID | CLONE_NEWIPC           # both unconditional
   fork container child; inside container child:
-    unshare CLONE_NEWNS [| CLONE_NEWNET]         # CLONE_NEWNET only when "-N" is given
+    unshare CLONE_NEWNS [| CLONE_NEWCGROUP] [| CLONE_NEWNET|CLONE_NEWUTS]
+                                                  # -C adds CGROUP, -N adds NET+UTS; one call
     if not root_private: mount --make-private /
     mount overlay                              # fails with a clear error if the
                                                # appdir/upperdir is on an
                                                # unsupported fs (e.g. overlayfs)
 
     # setup container filesystem
-    mount proc, sysfs, dev, "/dev/pts"
+    mount proc, sysfs, dev                         # dev bind is recursive; includes /dev/pts
     mount tmpfs "/run" "/tmp" "/var/tmp"
     call mount cgroupfs                          # see §Cgroup Lifecycle
     call setup resolv                            # see §Resolv.conf Strategy
@@ -555,6 +555,11 @@ define cleanup cgroup:
 11. **Cleanup** — Before recursive rmdir, the current process is written to the
     parent `cgroup.procs` to move it out of the subtree being removed. Called
     from 3 exit paths: `finish_child`, `spawn_cleanup`, `spawn_exec_fail`.
+12. **Cgroup namespace owner** — Only the container child unshares
+    `CLONE_NEWCGROUP`, folded into its existing `CLONE_NEWNS` unshare (before
+    mounting cgroupfs). The parent stays in the host cgroup namespace, so
+    cleanup can see `${path}/cage-${pid}` and move itself out via
+    `${path}/cgroup.procs`.
 
 
 ### Network Namespace Setup
@@ -563,7 +568,7 @@ When `-N` is given, cage connects the container to the host with a veth pair
 and a NAT masquerade rule (IPv4, plus a best-effort IPv6 one). There is **no
 net-helper process**: the forked
 container child provides the container-side netns (it unshares `CLONE_NEWNET`
-together with the mount namespace — see L59), and the parent — the only process
+together with the mount namespace — see L58), and the parent — the only process
 still in the host netns — performs the host side. A futex coordinates them.
 
 ```
@@ -571,12 +576,13 @@ define setup net [main]:                        # before the fork (L45–47)
   modprobe_load("veth")
   open netlink socket                            # bound to the host netns
   allocate veth id N                             # next free "cage-vethN"
-  enable ip_forward (+ IPv6 forwarding)          # IPv6 forwarding is best-effort
+  enable ip_forward                              # IPv4
+  enable IPv6 forwarding                         # best-effort; see rule 7
   create nft table "cage-nat" + postrouting masquerade for "ip" and "ip6"
                                                  # once; EXCL, EEXIST = ok
 
 define setup veth [container child]:            # child side (L130; only with "-N")
-  signal "net-ready" (futex 1)                   # NET already unshared at L59
+  signal "net-ready" (futex 1)                   # NET already unshared at L58
   wait futex 2                                   # host side done
   assign NET_CAGE_IP(N) to "eth0", bring it up
   add default route via NET_HOST_IP(N) on "eth0"
@@ -596,9 +602,10 @@ define setup net host side [main parent]:       # parent side (L145; only with "
 
 **Key rules:**
 
-1. **One fork, no helper** — the container child (L59) unshares
-   `CLONE_NEWNS [| CLONE_NEWNET]` itself; there is no separate net-helper
-   process. `CLONE_NEWNET` cannot move up to L57: as with `CLONE_NEWNS`, that
+1. **One fork, no helper** — the container child (L58) unshares
+   `CLONE_NEWNS [| CLONE_NEWCGROUP] [| CLONE_NEWNET|CLONE_NEWUTS]` itself;
+   there is no separate net-helper process. `CLONE_NEWNET` cannot move up to
+   L57: as with `CLONE_NEWNS`, that
    would put the parent in the same netns as the child, and only the host-side
    parent can create the host end or install the NAT rule.
 2. **The peer is born in the container netns** — the pair is created in a
@@ -642,6 +649,25 @@ define setup net host side [main parent]:       # parent side (L145; only with "
    run never fails for lack of IPv6. Full IPv6 internet egress additionally
    requires an IPv6 upstream on the host.
 
+   On kernels with `force_forwarding` (6.17+), forwarding is enabled with
+   `conf/all/force_forwarding=1` plus `conf/default/force_forwarding=1` (so
+   the new `cage-vethN` inherits it), never with `conf/all/forwarding=1`:
+   global forwarding purges the host's RA-learned default routes on
+   interfaces with `accept_ra != 2`, which breaks host IPv6 connectivity.
+   Older kernels fall back to raising `accept_ra` to 2 on every existing
+   interface first (per-interface writes; `all/accept_ra` does not propagate)
+   and only then setting `all/forwarding=1`, so `rt6_purge_dflt_routers()`
+   keeps their RA default routes. If any per-interface raise fails, cage
+   leaves forwarding off rather than risk the host's connectivity.
+
+
+ 8. **Futex waits are bounded by child death** — both shared handshakes (the
+   "net-ready" wait on the parent's host-side path and the "root-ready" wait)
+   use a 20 ms timed futex loop that peeks at the child with
+   `waitid(WEXITED | WNOHANG | WNOWAIT)`. A child that fails before signalling
+   (unshare, mount or init-script failure) therefore ends the wait at once;
+   the parent skips the host-side veth work and the normal reap in
+   `finish_child` still reports the failure.
 
 ### Resolv.conf Strategy
 
@@ -668,7 +694,7 @@ define setup resolv:
 
   replace:
     if "-N" AND host has only localhost DNS:
-      mkdtemp + mount tmpfs + write 8.8.8.8 + bind mount + unlink tmpfs + umount + rmdir
+      mkstemp + fchmod 0644 + write 8.8.8.8 + bind mount + unlink source
     else:
       bind mount host's resolv.conf into target
     return 0
@@ -686,14 +712,18 @@ define setup resolv:
    (no unlink, bind mount works on top of a regular file).
 5. **Symlink / other / non-existent** → remove if present (fatal on
     failure), `touch` create empty file, replace.
-6. **Replace + `-N` + host has only localhost DNS** → tmpfs-backed
-   8.8.8.8 DNS: `mkdtemp`, mount tmpfs, write nameserver, bind mount
-   to target, clean up temp dir. Cage's netns can't reach host's
-   loopback resolver.
+6. **Replace + `-N` + host has only localhost DNS** → anonymous
+   root-owned file with 8.8.8.8/1.1.1.1: `mkstemp`, `fchmod 0644`, write,
+   bind mount the file into the target, unlink the source. The bind pins the
+   unlinked inode, so no extra tmpfs mount is needed. Cage's netns can't reach
+   host's loopback resolver.
 7. **Replace + `-N` + host has real DNS** → bind mount host's resolv.conf
    into target. Real DNS is reachable from any network namespace.
 8. **Replace + no `-N`** → bind mount host's resolv.conf into target
    (host resolver reachable via shared netns).
+9. **Size cap** → reads are capped at 64 KiB. An oversized host file is
+   treated as having no real DNS (default DNS is used); an oversized guest
+   file fails the setup closed.
 
 > "Localhost DNS" (as opposed to *valid/real* DNS) means a `nameserver` line
 > whose value is on loopback (`127.*`, `::1`), the literal name `localhost`, or
@@ -1150,8 +1180,12 @@ define handle same fs:
    reading `/proc/self/mountinfo`.
 7. **Idempotent mount** — `find_free_loop` skips already-bound loop devices.
     The mount is skipped if a mount was detected at the target path.
-8. **Sparse image** — `ext4_create_img()` writes a sparse 10G file. Actual
-   space is allocated on demand by ext4.
+8. **Sparse image, built aside** — `ext4_create_img()` writes a sparse 10G
+   file. Actual space is allocated on demand by ext4. The image is built at
+   `${loopdir}.img.tmp.<pid>` and `rename()`d into place, so an interrupted
+   build never leaves a truncated `${loopdir}.img`. An existing image is
+   reused only when `ext4_image_valid()` confirms its exact size and the
+   `0xEF53` superblock magic; otherwise it is rebuilt and atomically replaced.
 9. **Cleanup on exit** — The ext4 loopback mount persists (the image stays
    mounted across invocations). To reset, unmount and remove manually. Cage
      does not unmount the loopback on exit.
@@ -1334,7 +1368,8 @@ mechanism for tracking which "cage" instance is running for a given application.
    **full pidfile path** (the parent never chdir'd to the pidfile directory).
    The parent stays on the host filesystem throughout, so the full path
    resolves correctly from any cwd. The unlink tolerates `ENOENT`: `-k` may
-   have removed the pidfile first (`killpid()` unlinks before signalling).
+   have removed the pidfile first (`killpid()` unlinks after signalling and
+   waiting for the target to be gone).
 
 3. **Re-entry detection** — When `cage` is invoked for a named application
    that already has a running instance:
@@ -1372,19 +1407,21 @@ mechanism for tracking which "cage" instance is running for a given application.
    races between `detect_existing()` and `create_pidfile()`, the second
    caller's `create_pidfile()` fails with `EEXIST`, causing it to exit —
    `O_EXCL` provides fail-safe atomicity. Teardown windows are closed by
-   ordering: `killpid()` unlinks the pidfile before signalling (a concurrent
-   `detect_existing()` then sees no pidfile and spawns fresh), and a fresh
-   spawn overlapping post-unlink teardown of the old session is safe (unique
-   `mkdtemp` root, per-run cgroups; the old mounts die with its namespaces).
+   ordering: `killpid()` unlinks the pidfile only after the old target is
+   confirmed gone (a concurrent `detect_existing()` then sees no pidfile and
+   spawns fresh), and a fresh spawn overlapping post-unlink teardown of the
+   old session is safe (unique `mkdtemp` root, per-run cgroups; the old mounts
+   die with its namespaces).
    The residual zombie→`setns` TOCTOU remains: if the zombie is reaped
    between detection and `setns`, `setns` fails with `ESRCH` and the run
    reports `cage: setns failed` — a clean error, not a degraded join.
 
-6. **Kill mode** (`-k` flag) — `killpid()` reads the pidfile, unlinks it
-   first (ENOENT-tolerant — a concurrent main process may have removed it
-   already), releases the flock, then sends SIGTERM (then SIGKILL after a
-   grace period) and exits; if the target is already an unreaped zombie the
-   grace wait is skipped. Same stale-detection logic applies.
+6. **Kill mode** (`-k` flag) — `killpid()` reads the pidfile, releases the
+   flock, then sends SIGTERM (then SIGKILL after a grace period), waits for
+   the target to be confirmed gone, and only then unlinks the pidfile
+   (ENOENT-tolerant — a concurrent main process may have removed it already);
+   if the target is already an unreaped zombie the grace wait is skipped.
+   Same stale-detection logic applies.
 
 **Retry behavior:**
 - **Syscall retry**: Syscalls that may fail with `EINTR` (e.g. `waitpid`, `write`, `read`) are wrapped in loops with exponential backoff: `wait = min((1 << attempt) * 10ms, 1s)`, max 8 attempts.

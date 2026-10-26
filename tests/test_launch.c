@@ -303,7 +303,7 @@ static void test_setup_cwd_creates_missing_path(void)
   ASSERT(WIFEXITED(status));
   ASSERT_EQ(WEXITSTATUS(status), 0);
   mem_free(cwd);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 

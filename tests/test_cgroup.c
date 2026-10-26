@@ -48,16 +48,23 @@ static void seed_v1_cages(const char *root, const char *name)
 
 static void test_cgroup_cleanup_empty(void)
 {
-  cgroup_cleanup(0, 0);
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+  cgroup_cleanup_at(root, 0, 0);
+  ASSERT_EQ(io_exists(root), 0);
+  io_rmtree(root);
+  mem_free(root);
 }
 
 static void test_cgroup_get_type(void)
 {
-  int r = cgroup_get_type();
-  ASSERT(r >= -1);
-  /* /proc/filesystems is always readable on Linux */
-  ASSERT(r >= 0);
-  ASSERT(r <= 2);
+  mock_sys_reset();
+  _mock_filesystems = "nodev\tcgroup2\n";
+  ASSERT_EQ(cgroup_get_type(), 2);
+  _mock_filesystems = "nodev\tcgroup\n";
+  ASSERT_EQ(cgroup_get_type(), 1);
+  _mock_filesystems = "ext4\n";
+  ASSERT_EQ(cgroup_get_type(), 0);
 }
 
 static void test_cgroup_get_type_cached(void)
@@ -69,8 +76,15 @@ static void test_cgroup_get_type_cached(void)
 
 static void test_cgroup_cleanup_nonexistent(void)
 {
-  /* exercise fs_type=2 path with nonexistent cgroup dir */
-  cgroup_cleanup(getpid(), 2);
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+  cgroup_cleanup_at(root, 42, 2);
+  ASSERT_EQ(io_exists(root), 0);
+  char *cage = mem_path(root, "cage-42");
+  ASSERT_NE(io_exists(cage), 0);
+  mem_free(cage);
+  io_rmtree(root);
+  mem_free(root);
 }
 
 static void test_cgroup_cleanup_removes_dir(void)
@@ -79,14 +93,24 @@ static void test_cgroup_cleanup_removes_dir(void)
   ASSERT_NOT_NULL(root);
   char *cg = mem_path(root, "sys/fs/cgroup");
   ASSERT_EQ(io_mkdir(cg), 0);
+  seed_procs(cg);
   char *cage = mem_path(cg, "cage-12345");
   ASSERT_EQ(io_mkdir(cage), 0);
+  char *parent = mem_path(cage, "cage-parent");
+  ASSERT_EQ(io_mkdir(parent), 0);
   ASSERT_EQ(io_exists(cage), 0);
   cgroup_cleanup_at(cg, 12345, 2);
   ASSERT_NE(io_exists(cage), 0);
+  char *procs = mem_path(cg, "cgroup.procs");
+  buf_t b = BUF_INIT;
+  ASSERT_EQ(io_read(procs, &b), 0);
+  ASSERT(strcmp(b.data, "12345\n") == 0);
+  buf_free(&b);
+  mem_free(procs);
+  mem_free(parent);
   mem_free(cage);
   mem_free(cg);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -99,7 +123,7 @@ static void test_cgroup_cleanup_at_v1_noop(void)
   cgroup_cleanup_at(root, 1, 1);
   ASSERT_EQ(io_exists(cage), 0);
   mem_free(cage);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -111,7 +135,7 @@ static void test_cgroup_cleanup_at_missing_noop(void)
   char *cage = mem_path(root, "cage-4242");
   ASSERT_NE(io_exists(cage), 0);
   mem_free(cage);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -128,7 +152,7 @@ static void test_v2_creates_dirs(void)
   ASSERT_EQ(io_isdir(cage), 0);
   mem_free(cage);
   mem_free(cg);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -150,7 +174,7 @@ static void test_v2_creates_procs(void)
   ASSERT_EQ(strcmp(buf, "1\n"), 0);
   mem_free(procs);
   mem_free(cg);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -164,7 +188,7 @@ static void test_v2_with_pid_42(void)
   char *cage = mem_path(root, "sys/fs/cgroup/cage-42");
   ASSERT_EQ(io_isdir(cage), 0);
   mem_free(cage);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -187,7 +211,7 @@ static void test_v2_multiple_pids(void)
   char *c3 = mem_path(root, "sys/fs/cgroup/cage-12345");
   ASSERT_EQ(io_isdir(c3), 0);
   mem_free(c3);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -204,7 +228,7 @@ static void test_v2_deep_path(void)
   ASSERT_EQ(io_isdir(cage), 0);
   mem_free(cage);
   mem_free(cg);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -219,7 +243,7 @@ static void test_v2_sys_blocked_by_file(void)
   int r = cgroup_v2_enter(root, "cage-1", 1);
   ASSERT_EQ(r, -1);
   mem_free(block);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -234,7 +258,7 @@ static void test_v2_root_is_file(void)
   int r = cgroup_v2_enter(block, "cage-1", 1);
   ASSERT_EQ(r, -1);
   mem_free(block);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -248,7 +272,7 @@ static void test_v2_with_pid_0(void)
   char *cage = mem_path(root, "sys/fs/cgroup/cage-0");
   ASSERT_EQ(io_isdir(cage), 0);
   mem_free(cage);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -262,7 +286,7 @@ static void test_v2_existing_path(void)
   char *cage = mem_path(root, "sys/fs/cgroup/cage-1");
   ASSERT_EQ(io_isdir(cage), 0);
   mem_free(cage);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -273,7 +297,7 @@ static void test_write_pid_fail(void)
   char *pf = mem_path(root, "nonexistent/write.pid");
   ASSERT_EQ(write_pid(pf, 42), -1);
   mem_free(pf);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -285,7 +309,7 @@ static void test_write_pid_missing_rejected(void)
   ASSERT_EQ(write_pid(pf, 42), -1);
   ASSERT_EQ(io_exists(pf), 1);
   mem_free(pf);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -303,7 +327,7 @@ static void test_write_pid_success(void)
   ASSERT_EQ(strcmp(buf, "123\n"), 0);
   close(fd);
   mem_free(pf);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -333,11 +357,14 @@ static void test_advance_line_empty(void)
 
 static void test_read_proc_cgroups_exists(void)
 {
+  mock_sys_reset();
+  _mock_cgroups = "#subsys_name\thierarchy\tnum_cgroups\tenabled\n" "cpu\t0\t1\t1\nmemory\t0\t1\t1\npids\t0\t1\t1\n";
   char names[32][64];
   int n = read_proc_cgroups(names);
-  ASSERT(n >= 0);
-  if (n > 0)
-    ASSERT(strlen(names[0]) > 0);
+  ASSERT_EQ(n, 3);
+  ASSERT_STR_EQ(names[0], "cpu");
+  ASSERT_STR_EQ(names[1], "memory");
+  ASSERT_STR_EQ(names[2], "pids");
 }
 
 static void test_v2_enter_basic(void)
@@ -355,7 +382,7 @@ static void test_v2_enter_basic(void)
   ASSERT_EQ(strcmp(buf, "77\n"), 0);
   close(fd);
   mem_free(procs);
-  test_rmtree(tmp);
+  io_rmtree(tmp);
   mem_free(tmp);
 }
 
@@ -367,22 +394,19 @@ static void test_v1_enter_one_creates_dirs(void)
   char *cgdir = mem_path(root, "memory/test-cage-1");
   ASSERT_EQ(io_isdir(cgdir), 0);
   mem_free(cgdir);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
 static void test_v1_enter_creates_dirs(void)
 {
-  char names[32][64];
-  int n = read_proc_cgroups(names);
-  if (n <= 0)
-    return;
+  mock_sys_reset();
   char *tmp = test_temp_root();
   ASSERT_NOT_NULL(tmp);
   seed_v1_cages(tmp, "test-cage-99");
   int r = cgroup_v1_enter(tmp, "test-cage-99", 99);
   ASSERT_EQ(r, 0);
-  test_rmtree(tmp);
+  io_rmtree(tmp);
   mem_free(tmp);
 }
 
@@ -451,7 +475,7 @@ static void test_write_subtree_basic(void)
   ASSERT_EQ(strcmp(buf, "+cpu +io"), 0);
   close(fd);
   mem_free(sub);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -460,7 +484,7 @@ static void test_write_subtree_fail(void)
   char *root = test_temp_root();
   ASSERT_NOT_NULL(root);
   ASSERT_EQ(write_subtree(root, "+cpu", 4), -1);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -495,7 +519,7 @@ static void test_enable_cgroup_controllers_success(void)
   close(fd);
   mem_free(sub);
   mem_free(cg);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -507,7 +531,7 @@ static void test_enable_cgroup_controllers_no_file(void)
   ASSERT_EQ(io_mkdir(cg), 0);
   ASSERT_EQ(enable_cgroup_controllers(cg), 0);
   mem_free(cg);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -516,11 +540,9 @@ static void test_pre_unshare_not_root(void)
   char *root = test_temp_root();
   ASSERT_NOT_NULL(root);
   int r = cgroup_pre_unshare_at(root, 2, getpid());
-  test_rmtree(root);
-  mem_free(root);
-  if (geteuid() == 0)
-    return;
   ASSERT_EQ(r, -1);
+  io_rmtree(root);
+  mem_free(root);
 }
 
 static void test_pre_unshare_success(void)
@@ -565,7 +587,7 @@ static void test_pre_unshare_success(void)
   snprintf(pid, sizeof(pid), "%d\n", (int)getpid());
   ASSERT_EQ(strcmp(buf, pid), 0);
 
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -622,7 +644,7 @@ static void test_pre_unshare_subtree_control(void)
   ASSERT_EQ(strcmp(buf, "+cpu +io +pids"), 0);
   mem_free(sub);
 
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -645,7 +667,7 @@ static void test_pre_unshare_fails_no_procs(void)
   int r = cgroup_pre_unshare_at(root, 2, getpid());
   ASSERT_EQ(r, -1);
 
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -654,10 +676,8 @@ static void test_pre_unshare_no_controllers(void)
   char *root = test_temp_root();
   ASSERT_NOT_NULL(root);
   int r = cgroup_pre_unshare_at(root, 2, getpid());
-  if (geteuid() == 0)
-    return;
   ASSERT_EQ(r, -1);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -671,46 +691,21 @@ static void test_cgroup_enter_with_mock_root(void)
   char *cg = mem_path(root, "sys/fs/cgroup/cage-parent");
   ASSERT_EQ(io_isdir(cg), 0);
   mem_free(cg);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
-}
-
-static void test_cgroup_pre_unshare_no_root(void)
-{
-  if (geteuid() == 0)
-    return;
-  int r = cgroup_pre_unshare(2, getpid());
-  ASSERT_EQ(r, -1);
 }
 
 static void test_pre_unshare_mkdir_fails(void)
 {
-  char *root = test_temp_root();
+  char *base = test_temp_root();
+  ASSERT_NOT_NULL(base);
+  char *root = mem_path(base, "missing");
   ASSERT_NOT_NULL(root);
-
-  char *ctrl = mem_path(root, "cgroup.controllers");
-  int fd = open(ctrl, O_WRONLY | O_CREAT, 0644);
-  ASSERT_NE(fd, -1);
-  ASSERT_NE(write(fd, "cpu\n", 4), -1);
-  close(fd);
-  mem_free(ctrl);
-
-  char *sub = mem_path(root, "cgroup.subtree_control");
-  fd = open(sub, O_WRONLY | O_CREAT, 0644);
-  ASSERT_NE(fd, -1);
-  close(fd);
-  mem_free(sub);
-
-  ASSERT_EQ(chmod(root, 0555), 0);
-
   int r = cgroup_pre_unshare_at(root, 2, getpid());
-  if (geteuid() == 0)
-    return;
   ASSERT_EQ(r, -1);
-
-  ASSERT_EQ(chmod(root, 0755), 0);
-  test_rmtree(root);
   mem_free(root);
+  io_rmtree(base);
+  mem_free(base);
 }
 
 static void test_pre_unshare_unreadable_controllers(void)
@@ -745,7 +740,7 @@ static void test_pre_unshare_unreadable_controllers(void)
   int r = cgroup_pre_unshare_at(root, 2, getpid());
   ASSERT_EQ(r, 0);
 
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -766,7 +761,7 @@ static void test_pre_unshare_mount_root_bad_path(void)
 
   mem_free(bad);
   mem_free(block);
-  test_rmtree(tmp);
+  io_rmtree(tmp);
   mem_free(tmp);
 }
 
@@ -808,7 +803,7 @@ static void test_cgroup_rmdir_recursive_preserves_files(void)
   procs = mem_path(root, "cgroup.procs");
   ASSERT_EQ(io_exists(procs), 0);
   mem_free(procs);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -833,7 +828,7 @@ static void test_cgroup_rmdir_recursive_subdir_with_file(void)
   procs = mem_path(child, "cgroup.procs");
   ASSERT_EQ(io_exists(procs), 0);
   mem_free(procs);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -843,7 +838,8 @@ static void test_pre_unshare_no_op(void)
   ASSERT_NOT_NULL(root);
   ASSERT_EQ(cgroup_pre_unshare_at(root, 0, 42), 0);
   ASSERT_EQ(cgroup_pre_unshare_at(root, 1, 42), 0);
-  test_rmtree(root);
+  ASSERT_EQ(cgroup_pre_unshare(1, 42), 0);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -853,7 +849,7 @@ static void test_cgroup_enter_v1(void)
   ASSERT_NOT_NULL(root);
   seed_v1_cages(root, "cage-parent");
   ASSERT_EQ(cgroup_enter(root, 0), 0);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -902,7 +898,7 @@ static void test_pre_unshare_subtree_control_readonly(void)
   int r = cgroup_pre_unshare_at(root, 2, getpid());
   ASSERT_EQ(r, 0);
 
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -955,7 +951,6 @@ SUITE(cgroup)
   RUN_TEST(pre_unshare_no_controllers);
   RUN_TEST(pre_unshare_mkdir_fails);
   RUN_TEST(cgroup_enter_with_mock_root);
-  RUN_TEST(cgroup_pre_unshare_no_root);
   RUN_TEST(pre_unshare_unreadable_controllers);
   RUN_TEST(pre_unshare_mount_root_bad_path);
   RUN_TEST(pre_unshare_no_op);

@@ -21,20 +21,24 @@
 // cppcheck-suppress missingIncludeSystem
 #include <time.h>
 
-static int cgroup_type_cache = -2;
+// cppcheck-suppress staticFunction
+int __cgroup_read_filesystems(buf_t *b)
+{
+  return io_read("/proc/filesystems", b);
+}
+
+weak_alias(__cgroup_read_filesystems, cgroup_read_filesystems);
 
 int cgroup_get_type(void)
 {
-  if (cgroup_type_cache != -2)
-    return cgroup_type_cache;
   buf_t b = BUF_INIT;
-  if (io_read("/proc/filesystems", &b) != 0) {
+  if (cgroup_read_filesystems(&b) != 0) {
     buf_free(&b);
     return -1;
   }
-  cgroup_type_cache = strstr(b.data, "cgroup2") ? 2 : (strstr(b.data, "\tcgroup") ? 1 : 0);
+  int t = strstr(b.data, "cgroup2") ? 2 : (strstr(b.data, "\tcgroup") ? 1 : 0);
   buf_free(&b);
-  return cgroup_type_cache;
+  return t;
 }
 
 static int try_write_subtree(const char *sub, const char *val, size_t vlen)
@@ -182,13 +186,16 @@ void cgroup_cleanup_at(const char *root, pid_t pid, int fs_type)
   if (fs_type != 2)
     return;
   char cgdir[PATH_MAX];
-  snprintf(cgdir, sizeof(cgdir), "%s/cage-%d", root, (int)pid);
+  if (snprintf(cgdir, sizeof(cgdir), "%s/cage-%d", root, (int)pid) >= (int)sizeof(cgdir))
+    return;
   if (io_exists(cgdir) != 0)
     return;
   char procs[PATH_MAX];
-  snprintf(procs, sizeof(procs), "%s/cgroup.procs", root);
+  if (snprintf(procs, sizeof(procs), "%s/cgroup.procs", root) >= (int)sizeof(procs))
+    return;
   write_pid(procs, pid);
   cgroup_rmdir_recursive(cgdir);
+  io_cache_invalidate(cgdir);
 }
 
 void cgroup_cleanup(pid_t pid, int fs_type)

@@ -9,20 +9,25 @@
 // cppcheck-suppress missingIncludeSystem
 #include <grp.h>
 
+static void set_root_fallback(user_t *u)
+{
+  u->name = mem_strdup("root");
+  u->home = mem_strdup("/root");
+  u->passwd_gid = 0;
+}
+
 static void resolve_passwd_nodb(user_t *u)
 {
   if (!u->uid_filled) {
-    u->uid = 65534;
+    u->uid = NOBODY_ID;
     u->uid_filled = 1;
-    u->passwd_gid = 65534;
+    u->passwd_gid = NOBODY_ID;
     return;
   }
   if (u->uid != 0) {
     u->passwd_gid = u->uid;
   } else {
-    u->name = mem_strdup("root");
-    u->home = mem_strdup("/root");
-    u->passwd_gid = 0;
+    set_root_fallback(u);
   }
 }
 
@@ -39,13 +44,10 @@ static void resolve_by_uid(user_t *u, FILE *pf)
       return;
     }
   }
-  if (u->uid == 0) {
-    u->name = mem_strdup("root");
-    u->home = mem_strdup("/root");
-    u->passwd_gid = 0;
-  } else {
+  if (u->uid == 0)
+    set_root_fallback(u);
+  else
     u->passwd_gid = u->uid;
-  }
 }
 
 static void assign_from_passwd(user_t *u, const struct passwd *pw)
@@ -72,8 +74,8 @@ static void resolve_by_name(user_t *u, FILE *pf)
       assign_from_passwd(u, pw);
       return;
     }
-  u->uid = 65534;
-  u->passwd_gid = 65534;
+  u->uid = NOBODY_ID;
+  u->passwd_gid = NOBODY_ID;
   u->uid_filled = 1;
 }
 

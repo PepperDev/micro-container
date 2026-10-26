@@ -1,37 +1,12 @@
+#include "net/net.h"
 #include "net/netlink.h"
 #include "util/syscall.h"
 // cppcheck-suppress missingIncludeSystem
 #include <string.h>
 // cppcheck-suppress missingIncludeSystem
-#include <stdlib.h>
-// cppcheck-suppress missingIncludeSystem
 #include <netinet/in.h>
 // cppcheck-suppress missingIncludeSystem
 #include <linux/veth.h>
-
-struct nla_blob {
-  const void *p;
-  uint16_t n;
-};
-
-static int put_attr(void *buf, size_t cap, size_t *off, int type, struct nla_blob d)
-{
-  size_t alen = NLA_ALIGN(sizeof(struct nlattr) + d.n);
-  if (*off + alen > cap)
-    return -1;
-  struct nlattr *a = (struct nlattr *)((char *)buf + *off);
-  a->nla_len = (uint16_t) (sizeof(struct nlattr) + d.n);
-  a->nla_type = (uint16_t) type;
-  if (d.n)
-    memcpy(a + 1, d.p, d.n);
-  *off += alen;
-  return 0;
-}
-
-static int put_attr_u32(void *buf, size_t cap, size_t *off, int type, uint32_t val)
-{
-  return put_attr(buf, cap, off, type, (struct nla_blob) { &val, 4 });
-}
 
 static struct ifinfomsg *fill_ifinfomsg(struct nlmsghdr *h, unsigned char family, uint32_t change)
 {
@@ -59,7 +34,7 @@ static int fill_veth_peer(void *buf, size_t cap, size_t *off, const char *peer, 
     return -1;
   if (netlink_put_string(buf, cap, off, IFLA_IFNAME, peer) < 0)
     return -1;
-  if (put_attr_u32(buf, cap, off, IFLA_NET_NS_FD, (uint32_t) nsfd) < 0)
+  if (netlink_put_u32(buf, cap, off, IFLA_NET_NS_FD, (uint32_t) nsfd) < 0)
     return -1;
   netlink_nest_end(buf, vp, off);
   return 0;
@@ -99,6 +74,7 @@ int netlink_fill_create_veth(void *buf, size_t cap, const char *host_name, const
   return 0;
 }
 
+// cppcheck-suppress staticFunction
 int netlink_fill_dump_link(void *buf, size_t cap)
 {
   size_t len = netlink_request_len();
@@ -119,6 +95,7 @@ static int link_has_name(struct nlattr *attr, int alen, const char *name)
   return 0;
 }
 
+// cppcheck-suppress staticFunction
 int netlink_find_ifname(const void *buf, size_t len, const char *name, int *ifindex)
 {
   struct nlmsghdr *h;
@@ -136,56 +113,15 @@ int netlink_find_ifname(const void *buf, size_t len, const char *name, int *ifin
   return 0;
 }
 
-static int parse_veth_id(const char *name, const char *prefix)
-{
-  size_t pfxlen = strlen(prefix);
-  if (strncmp(name, prefix, pfxlen) != 0)
-    return -1;
-  char *end;
-  long id = strtol(name + pfxlen, &end, 10);
-  if (end == name + pfxlen || *end != '\0')
-    return -1;
-  return (int)id;
-}
-
-static void max_veth_scan_attrs(struct nlattr *attr, int alen, const char *prefix, int *max)
-{
-  while (NLA_OK(attr, alen)) {
-    if (attr->nla_type == IFLA_IFNAME) {
-      int vid = parse_veth_id((const char *)NLA_DATA(attr), prefix);
-      if (vid >= 0 && vid > *max)
-        *max = vid;
-    }
-    NLA_NEXT(attr, alen);
-  }
-}
-
-// cppcheck-suppress staticFunction
-int netlink_max_veth_id(const void *buf, size_t len, const char *prefix, int *id)
-{
-  int max = -1;
-  struct nlmsghdr *h;
-  size_t rem = len;
-  for (h = (struct nlmsghdr *)buf; NLMSG_OK(h, rem); h = NLMSG_NEXT(h, rem)) {
-    if (h->nlmsg_type != RTM_NEWLINK)
-      continue;
-    struct ifinfomsg *ifi = (struct ifinfomsg *)NLMSG_DATA(h);
-    max_veth_scan_attrs((struct nlattr *)((char *)ifi + NLMSG_ALIGN(sizeof(*ifi))),
-                        (int)NLMSG_PAYLOAD(h, sizeof(*ifi)), prefix, &max);
-  }
-  *id = max;
-  return max >= 0 ? 1 : 0;
-}
-
 static int fill_addr_attrs(void *buf, size_t cap, size_t *off, int prefix, uint32_t local)
 {
   uint32_t addr = htonl(local);
-  if (put_attr_u32(buf, cap, off, IFA_LOCAL, addr) < 0)
+  if (netlink_put_u32(buf, cap, off, IFA_LOCAL, addr) < 0)
     return -1;
   if (prefix <= 0 || prefix >= 31)
     return 0;
   uint32_t nm = htonl((1u << (32 - prefix)) - 1);
-  return put_attr_u32(buf, cap, off, IFA_BROADCAST, addr | nm);
+  return netlink_put_u32(buf, cap, off, IFA_BROADCAST, addr | nm);
 }
 
 static struct ifaddrmsg *fill_addr_hdr(void *buf, int ifindex, int prefix, int family)
@@ -220,7 +156,7 @@ int netlink_fill_addr6(void *buf, size_t cap, int ifindex, int prefix, const str
   struct ifaddrmsg *ifa = fill_addr_hdr(buf, ifindex, prefix, AF_INET6);
   ifa->ifa_flags = IFA_F_NODAD;
   size_t off = NLMSG_HDRLEN + sizeof(struct ifaddrmsg);
-  if (put_attr(buf, cap, &off, IFA_ADDRESS, (struct nla_blob) { addr->b, sizeof(addr->b) }
+  if (netlink_put_attr(buf, cap, &off, &(struct nl_attr) {.type = IFA_ADDRESS,.len = sizeof(addr->b),.data = addr->b }
       ) < 0)
     return -1;
   h->nlmsg_len = (uint32_t) off;
@@ -245,9 +181,9 @@ int netlink_fill_up(void *buf, size_t cap, int ifindex)
 
 static int fill_route_attrs(void *buf, size_t cap, size_t *off, int oif, uint32_t gw)
 {
-  if (put_attr_u32(buf, cap, off, RTA_GATEWAY, htonl(gw)) < 0)
+  if (netlink_put_u32(buf, cap, off, RTA_GATEWAY, htonl(gw)) < 0)
     return -1;
-  return put_attr_u32(buf, cap, off, RTA_OIF, (uint32_t) oif);
+  return netlink_put_u32(buf, cap, off, RTA_OIF, (uint32_t) oif);
 }
 
 static struct rtmsg *fill_route_hdr(void *buf, int family)
@@ -283,16 +219,16 @@ int netlink_fill_default_route6(void *buf, size_t cap, int oif, const struct net
   struct nlmsghdr *h = (struct nlmsghdr *)buf;
   fill_route_hdr(buf, AF_INET6);
   size_t off = NLMSG_HDRLEN + sizeof(struct rtmsg);
-  if (put_attr(buf, cap, &off, RTA_GATEWAY, (struct nla_blob) { gw->b, sizeof(gw->b) }
+  if (netlink_put_attr(buf, cap, &off, &(struct nl_attr) {.type = RTA_GATEWAY,.len = sizeof(gw->b),.data = gw->b }
       ) < 0)
     return -1;
-  if (put_attr_u32(buf, cap, &off, RTA_OIF, (uint32_t) oif) < 0)
+  if (netlink_put_u32(buf, cap, &off, RTA_OIF, (uint32_t) oif) < 0)
     return -1;
   h->nlmsg_len = (uint32_t) off;
   return 0;
 }
 
-static int netlink_dump_find_ifname(int fd, const char *name, int *idx)
+int netlink_dump_find_ifname(int fd, const char *name, int *idx)
 {
   char dbuf[16384];
   int len = netlink_fill_dump_link(dbuf, sizeof(dbuf));
@@ -316,24 +252,21 @@ int netlink_create_veth(int fd, const char *host, const char *peer, int nsfd, in
   return netlink_dump_find_ifname(fd, host, host_idx);
 }
 
-int netlink_alloc_veth_id(int fd, const char *prefix, int *id)
+static int dump_all(int fd, char *buf, size_t cap, size_t *rlen)
 {
-  char buf[16384];
-  int len = netlink_fill_dump_link(buf, sizeof(buf));
+  int len = netlink_fill_dump_link(buf, cap);
   if (len < 0)
     return -1;
   if (sys_netlink_send(fd, buf, (size_t)len) < 0)
     return -1;
+  return sys_netlink_recv_dump(fd, buf, cap, rlen);
+}
+
+int netlink_alloc_veth_id(int fd, const char *prefix, int *id)
+{
+  char buf[16384];
   size_t rlen;
-  if (sys_netlink_recv_dump(fd, buf, sizeof(buf), &rlen) < 0)
+  if (dump_all(fd, buf, sizeof(buf), &rlen) < 0)
     return -1;
-  int used;
-  if (netlink_max_veth_id(buf, rlen, prefix, &used) == 0) {
-    *id = 0;
-    return 0;
-  }
-  if (used >= 126)
-    return -1;
-  *id = used + 1;
-  return 0;
+  return netlink_lowest_free_veth_id(buf, rlen, prefix, id);
 }

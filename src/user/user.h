@@ -16,13 +16,12 @@ typedef struct {
 user_t *user_new(const char *user_str, const char *group_str, const char *rootfs);
 user_t *user_root_new(const char *rootfs);
 void user_resolve(user_t * u);
-uid_t get_uid(user_t * u);
-const char *get_name(user_t * u);
-const char *get_home(user_t * u);
-const char *get_shell(user_t * u);
-gid_t get_gid(user_t * u);
-group_list_t get_groups(user_t * u);
-const char *get_rootfs(const user_t * u);
+uid_t get_uid(const user_t * u);
+const char *get_name(const user_t * u);
+const char *get_home(const user_t * u);
+const char *get_shell(const user_t * u);
+gid_t get_gid(const user_t * u);
+group_list_t get_groups(const user_t * u);
 void user_free(user_t * u);
 
 #endif

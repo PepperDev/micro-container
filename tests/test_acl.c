@@ -46,7 +46,7 @@ static void test_acl_set_root_uid(void)
   ASSERT_EQ(acl_set(path, 0, 0, NULL, 0), 0);
   ASSERT_EQ(_mock_setxattr_count, 0);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -64,7 +64,7 @@ static void test_acl_set_same_uid(void)
   ASSERT_EQ(acl_set(path, st.st_uid, 0, NULL, 0), 0);
   ASSERT_EQ(_mock_setxattr_count, 0);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -83,7 +83,7 @@ static void test_acl_set_calls_setxattr(void)
   ASSERT_EQ(acl_set(path, test_uid, 1000, NULL, 0), 0);
   ASSERT_EQ(_mock_setxattr_count, 1);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -102,7 +102,7 @@ static void test_acl_set_setxattr_fails(void)
   ASSERT_EQ(acl_set(path, test_uid, 1000, NULL, 0), -1);
   ASSERT_EQ(_mock_setxattr_count, 1);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -114,7 +114,7 @@ static void test_acl_set_nonexistent_path(void)
   char *path = mem_path(root, "nonexistent");
   ASSERT_EQ(acl_set(path, 1000, 1000, NULL, 0), -1);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -137,7 +137,7 @@ static void test_acl_set_symlink_rejected(void)
 
   mem_free(link);
   mem_free(target);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -161,7 +161,7 @@ static void test_acl_set_fd_success(void)
   close(fd);
   close(sfd);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -186,7 +186,7 @@ static void test_acl_guest_set_success(void)
 
   mem_free(full);
   mem_free(sd);
-  test_rmtree(gr);
+  io_rmtree(gr);
   mem_free(gr);
 }
 
@@ -198,7 +198,7 @@ static void test_acl_guest_set_nonexistent(void)
   char *p = mem_path(root, "nope");
   ASSERT_EQ(acl_guest_set(p, 1000, 1000, NULL, 0), -1);
   mem_free(p);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 

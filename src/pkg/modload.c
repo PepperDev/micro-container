@@ -1,6 +1,7 @@
 #include "modload.h"
 #include "modprobe.h"
 #include "compress/decompress.h"
+#include "mod_format.h"
 #include "util/mem.h"
 #include "util/syscall.h"
 // cppcheck-suppress missingIncludeSystem
@@ -40,30 +41,32 @@ int finit_module_fd(int fd, unsigned int flags)
 }
 
 // cppcheck-suppress staticFunction
-int decompress_magic(const unsigned char *p)
+int decompress_magic(const unsigned char *p, size_t n)
 {
-  static const unsigned char gzip[] = { 0x1F, 0x8B };
-  static const unsigned char xz[] = { 0xFD, 0x37 };
-  static const unsigned char zstd[] = { 0x28, 0xB5, 0x2F, 0xFD };
-  if (memcmp(p, gzip, 2) == 0)
-    return 1;
-  if (memcmp(p, xz, 2) == 0)
-    return 2;
-  if (memcmp(p, zstd, 4) == 0)
-    return 3;
+  const struct mod_format *f = mod_format_by_magic(p, n);
+  return f ? f->code : 0;
+}
+
+static int write_all(int fd, const char *buf, size_t len)
+{
+  size_t off = 0;
+  while (off < len) {
+    ssize_t n = write(fd, buf + off, len - off);
+    if (n < 0) {
+      if (errno == EINTR)
+        continue;
+      return -1;
+    }
+    off += (size_t)n;
+  }
   return 0;
 }
 
 // cppcheck-suppress staticFunction
 int buf_write_to_fd(int fd, const buf_t *data)
 {
-  ssize_t written = 0;
-  while (written < (ssize_t) data->len) {
-    ssize_t n = write(fd, data->data + written, data->len - (size_t)written);
-    if (n < 0)
-      return -1;
-    written += n;
-  }
+  if (write_all(fd, data->data, data->len) != 0)
+    return -1;
   if (lseek(fd, 0, SEEK_SET) == -1)
     return -1;
   return 0;
@@ -100,15 +103,9 @@ int pipe_to_fd(FILE *f, int fd)
 {
   char buf[8192];
   size_t rbytes;
-  while ((rbytes = fread(buf, 1, sizeof(buf), f)) > 0) {
-    size_t off = 0;
-    while (off < rbytes) {
-      ssize_t wb = write(fd, buf + off, rbytes - off);
-      if (wb < 0)
-        return -1;
-      off += (size_t)wb;
-    }
-  }
+  while ((rbytes = fread(buf, 1, sizeof(buf), f)) > 0)
+    if (write_all(fd, buf, rbytes) != 0)
+      return -1;
   return 0;
 }
 
@@ -163,12 +160,11 @@ static int child_ok(pid_t pid)
   return WIFEXITED(status) && WEXITSTATUS(status) == 0;
 }
 
-static int decompress_xzstd_to_fd(int fd, const char *path, int comp)
+static int decompress_xzstd_to_fd(int fd, const char *path, const char *filter)
 {
-  const char *prog = (comp == 2) ? "xzcat" : "zstdcat";
   FILE *zf;
   pid_t pid;
-  if (spawn_filter(prog, path, &zf, &pid) != 0)
+  if (spawn_filter(filter, path, &zf, &pid) != 0)
     return -1;
   int r = pipe_to_fd(zf, fd);
   fclose(zf);
@@ -187,22 +183,8 @@ int open_module(const char *path, int *out_fd)
   return 0;
 }
 
-// cppcheck-suppress staticFunction
-int load_decompressed(const char *path, int comp)
+static int finish_finit(int fd)
 {
-  int fd;
-  if (comp == 1) {
-    if (decompress_gzip_to_fd(path, &fd) != 0)
-      return -1;
-  } else {
-    fd = memfd_create("cage-mod", 0);
-    if (fd < 0)
-      return -1;
-    if (decompress_xzstd_to_fd(fd, path, comp) != 0) {
-      close(fd);
-      return -1;
-    }
-  }
   int r = finit_module_fd(fd, 0);
   int saved = errno;
   close(fd);
@@ -211,6 +193,28 @@ int load_decompressed(const char *path, int comp)
     return -1;
   }
   return 0;
+}
+
+// cppcheck-suppress staticFunction
+int load_decompressed(const char *path, int comp)
+{
+  const struct mod_format *f = mod_format_by_code(comp);
+  if (!f)
+    return -1;
+  int fd;
+  if (!f->filter) {
+    if (decompress_gzip_to_fd(path, &fd) != 0)
+      return -1;
+  } else {
+    fd = memfd_create("cage-mod", 0);
+    if (fd < 0)
+      return -1;
+    if (decompress_xzstd_to_fd(fd, path, f->filter) != 0) {
+      close(fd);
+      return -1;
+    }
+  }
+  return finish_finit(fd);
 }
 
 static int load_compressed_module(int fd, const char *path, int comp)
@@ -238,18 +242,11 @@ int load_module_path(const char *path)
 
   unsigned char magic[4];
   ssize_t n = read(fd, magic, 4);
-  int comp = (n >= 2) ? decompress_magic(magic) : 0;
+  int comp = decompress_magic(magic, n > 0 ? (size_t)n : 0);
 
   if (comp)
     return load_compressed_module(fd, path, comp);
 
   lseek(fd, 0, SEEK_SET);
-  int r = finit_module_fd(fd, 0);
-  int saved = errno;
-  close(fd);
-  if (r != 0) {
-    fprintf(stderr, "cage: finit_module failed: %s\n", strerror(saved));
-    return -1;
-  }
-  return 0;
+  return finish_finit(fd);
 }

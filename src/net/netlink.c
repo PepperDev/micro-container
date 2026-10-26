@@ -1,4 +1,5 @@
 #include "net/netlink.h"
+#include "util/syscall.h"
 // cppcheck-suppress missingIncludeSystem
 #include <unistd.h>
 // cppcheck-suppress missingIncludeSystem
@@ -10,9 +11,9 @@
 // cppcheck-suppress missingIncludeSystem
 #include <linux/veth.h>
 
-int netlink_open(int *fd)
+static int nl_open(int protocol, int *fd)
 {
-  int s = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE);
+  int s = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, protocol);
   if (s < 0)
     return -1;
   struct sockaddr_nl sa;
@@ -26,11 +27,24 @@ int netlink_open(int *fd)
   return 0;
 }
 
+// cppcheck-suppress staticFunction -- used by tests
+int netlink_open(int *fd)
+{
+  return nl_open(NETLINK_ROUTE, fd);
+}
+
+int netfilter_open(int *fd)
+{
+  return nl_open(NETLINK_NETFILTER, fd);
+}
+
+// cppcheck-suppress staticFunction
 void netlink_close(int fd)
 {
   close(fd);
 }
 
+// cppcheck-suppress staticFunction
 int netlink_send(int fd, const void *buf, size_t len)
 {
   struct sockaddr_nl sa;
@@ -48,32 +62,30 @@ int netlink_send(int fd, const void *buf, size_t len)
   return 0;
 }
 
-int netlink_recv(int fd, void *buf, size_t cap, size_t *len)
+static int netlink_recv_flags(int fd, void *buf, size_t cap, size_t *len, int flags)
 {
   struct iovec iov = {.iov_base = buf,.iov_len = cap };
   struct msghdr msg = {
     .msg_iov = &iov,
     .msg_iovlen = 1,
   };
-  ssize_t n = recvmsg(fd, &msg, 0);
+  ssize_t n = recvmsg(fd, &msg, flags);
   if (n < 0)
     return -1;
   *len = (size_t)n;
   return 0;
 }
 
+// cppcheck-suppress staticFunction
+int netlink_recv(int fd, void *buf, size_t cap, size_t *len)
+{
+  return netlink_recv_flags(fd, buf, cap, len, 0);
+}
+
+// cppcheck-suppress staticFunction
 int netlink_recv_nb(int fd, void *buf, size_t cap, size_t *len)
 {
-  struct iovec iov = {.iov_base = buf,.iov_len = cap };
-  struct msghdr msg = {
-    .msg_iov = &iov,
-    .msg_iovlen = 1,
-  };
-  ssize_t n = recvmsg(fd, &msg, MSG_DONTWAIT);
-  if (n < 0)
-    return -1;
-  *len = (size_t)n;
-  return 0;
+  return netlink_recv_flags(fd, buf, cap, len, MSG_DONTWAIT);
 }
 
 size_t netlink_request_len(void)
@@ -103,6 +115,7 @@ static int nl_has_done(const void *buf, size_t len)
   return 0;
 }
 
+// cppcheck-suppress staticFunction
 int netlink_recv_dump(int fd, void *buf, size_t cap, size_t *len)
 {
   size_t total = 0;
@@ -122,19 +135,35 @@ int netlink_recv_dump(int fd, void *buf, size_t cap, size_t *len)
   return 0;
 }
 
-int netlink_put_string(void *buf, size_t cap, size_t *off, int type, const char *val)
+int netlink_put_attr(void *buf, size_t cap, size_t *off, const struct nl_attr *attr)
 {
-  size_t l = strlen(val) + 1;
-  size_t alen = NLA_ALIGN(sizeof(struct nlattr) + l);
-  if (*off + alen > cap)
+  if (attr->len > UINT16_MAX - sizeof(struct nlattr))
+    return -1;
+  size_t alen = NLA_ALIGN(sizeof(struct nlattr) + attr->len);
+  if (*off > cap || alen > cap - *off)
     return -1;
   struct nlattr *a = (struct nlattr *)((char *)buf + *off);
-  a->nla_len = (uint16_t) (sizeof(struct nlattr) + l);
-  a->nla_type = (uint16_t) type;
-  memcpy(a + 1, val, l);
+  a->nla_len = (uint16_t) (sizeof(struct nlattr) + attr->len);
+  a->nla_type = attr->type;
+  if (attr->len)
+    memcpy(a + 1, attr->data, attr->len);
   *off += alen;
+  return 0;
+}
+
+int netlink_put_string(void *buf, size_t cap, size_t *off, int type, const char *val)
+{
+  struct nl_attr attr = {.type = (uint16_t) type,.len = strlen(val) + 1,.data = val };
+  if (netlink_put_attr(buf, cap, off, &attr) != 0)
+    return -1;
   ((struct nlmsghdr *)buf)->nlmsg_len = (uint32_t) * off;
   return 0;
+}
+
+int netlink_put_u32(void *buf, size_t cap, size_t *off, int type, uint32_t val)
+{
+  struct nl_attr attr = {.type = (uint16_t) type,.len = sizeof(val),.data = &val };
+  return netlink_put_attr(buf, cap, off, &attr);
 }
 
 int netlink_nest_start(void *buf, size_t cap, size_t *off, int type, size_t *start)
@@ -170,6 +199,7 @@ int netlink_ack_result(const void *ack, size_t alen)
   return e->error == 0 ? 0 : -1;
 }
 
+// cppcheck-suppress staticFunction
 int netlink_send_ack(int fd, const void *buf, size_t len)
 {
   if (netlink_send(fd, buf, len) < 0)
@@ -180,3 +210,59 @@ int netlink_send_ack(int fd, const void *buf, size_t len)
     return -1;
   return netlink_ack_result(ack, alen);
 }
+
+// cppcheck-suppress staticFunction
+int __sys_netlink_open(int *fd)
+{
+  return netlink_open(fd);
+}
+
+weak_alias(__sys_netlink_open, sys_netlink_open);
+
+// cppcheck-suppress staticFunction
+void __sys_netlink_close(int fd)
+{
+  netlink_close(fd);
+}
+
+weak_alias(__sys_netlink_close, sys_netlink_close);
+
+// cppcheck-suppress staticFunction
+int __sys_netlink_send(int fd, const void *buf, size_t len)
+{
+  return netlink_send(fd, buf, len);
+}
+
+weak_alias(__sys_netlink_send, sys_netlink_send);
+
+// cppcheck-suppress staticFunction
+int __sys_netlink_recv(int fd, void *buf, size_t cap, size_t *len)
+{
+  return netlink_recv(fd, buf, cap, len);
+}
+
+weak_alias(__sys_netlink_recv, sys_netlink_recv);
+
+// cppcheck-suppress staticFunction
+int __sys_netlink_recv_nb(int fd, void *buf, size_t cap, size_t *len)
+{
+  return netlink_recv_nb(fd, buf, cap, len);
+}
+
+weak_alias(__sys_netlink_recv_nb, sys_netlink_recv_nb);
+
+// cppcheck-suppress staticFunction
+int __sys_netlink_send_ack(int fd, const void *buf, size_t len)
+{
+  return netlink_send_ack(fd, buf, len);
+}
+
+weak_alias(__sys_netlink_send_ack, sys_netlink_send_ack);
+
+// cppcheck-suppress staticFunction
+int __sys_netlink_recv_dump(int fd, void *buf, size_t cap, size_t *len)
+{
+  return netlink_recv_dump(fd, buf, cap, len);
+}
+
+weak_alias(__sys_netlink_recv_dump, sys_netlink_recv_dump);

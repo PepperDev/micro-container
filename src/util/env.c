@@ -114,12 +114,20 @@ const char *get_host_xdg_dir(char *buf, size_t sz, uid_t ruid)
   return buf;
 }
 
-char *env_read_pid_environ(pid_t pid)
+// cppcheck-suppress staticFunction
+int __read_pid_environ(pid_t pid, buf_t *b)
 {
   char path[64];
-  buf_t b = BUF_INIT;
   snprintf(path, sizeof(path), "/proc/%d/environ", (int)pid);
-  if (io_read_quiet(path, &b) != 0) {
+  return io_read_quiet(path, b);
+}
+
+weak_alias(__read_pid_environ, read_pid_environ);
+
+char *env_read_pid_environ(pid_t pid)
+{
+  buf_t b = BUF_INIT;
+  if (read_pid_environ(pid, &b) != 0) {
     buf_free(&b);
     return NULL;
   }

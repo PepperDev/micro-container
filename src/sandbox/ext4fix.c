@@ -14,8 +14,6 @@
 // cppcheck-suppress missingIncludeSystem
 #include <stdio.h>
 // cppcheck-suppress missingIncludeSystem
-#include <errno.h>
-// cppcheck-suppress missingIncludeSystem
 #include <unistd.h>
 // cppcheck-suppress missingIncludeSystem
 #include <sys/statfs.h>
@@ -220,27 +218,36 @@ static int set_loop_appdir(appdir_t *dirs, const loop_t *lp, int keep_work)
   return 0;
 }
 
-// cppcheck-suppress unusedFunction
-int make_relocated_dirs(appdir_t *dirs, const char *mnt)
+static int build_ext4_img(const char *img)
 {
-  loop_t lp;
-  if (loop_build(mnt, appdir_leaf(dirs->appdir), &lp) != 0)
+  char tmp[4096];
+  int n = snprintf(tmp, sizeof(tmp), "%s.tmp.%d", img, (int)getpid());
+  if (n < 0 || (size_t)n >= sizeof(tmp))
     return -1;
-  if (set_loop_appdir(dirs, &lp, 0) != 0)
+  io_unlink_quiet(tmp);
+  if (ext4_create_img(tmp) != 0) {
+    fprintf(stderr, "cage: failed to create ext4 image %s\n", img);
+    io_unlink_quiet(tmp);
     return -1;
-  if (mkdir_checked(dirs->appdir) != 0 || mkdir_checked(dirs->upperdir) != 0 || mkdir_checked(dirs->workdir) != 0)
+  }
+  if (rename(tmp, img) != 0) {
+    fprintf(stderr, "cage: failed to install ext4 image %s\n", img);
+    io_unlink_quiet(tmp);
     return -1;
-  dirs->dirs_created = 1;
+  }
   return 0;
 }
 
 static int setup_ext4_img(const char *img)
 {
-  if (ext4_create_img(img) != 0 && errno != EEXIST) {
-    fprintf(stderr, "cage: failed to create ext4 image %s\n", img);
+  int e = io_exists(img);
+  if (e < 0)
     return -1;
-  }
-  return 0;
+  if (e == 0 && ext4_image_valid(img))
+    return 0;
+  if (e == 0)
+    fprintf(stderr, "cage: replacing incomplete ext4 image %s\n", img);
+  return build_ext4_img(img);
 }
 
 static int setup_ext4_loopback(appdir_t * dirs, const loop_t * lp, int keep_work);

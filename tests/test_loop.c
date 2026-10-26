@@ -9,15 +9,6 @@
 #include <fcntl.h>
 #include <errno.h>
 
-static int try_create_dev(const char *path)
-{
-  int fd = open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0644);
-  if (fd < 0)
-    return -1;
-  close(fd);
-  return 0;
-}
-
 static void test_find_free_loop_fails(void)
 {
   mock_sys_reset();
@@ -45,64 +36,84 @@ static void test_find_free_loop_ctrl_fd_ok(void)
   ASSERT_EQ(_mock_loop_get_free_count, 1);
 
   _mock_loop_ctl_fd = -1;
-  close(fd);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
 static void test_find_free_loop_control_ok(void)
 {
-  if (try_create_dev("/dev/loop-control") != 0)
-    return;
-
   mock_sys_reset();
   _mock_loop_get_free_ret = 3;
+
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+  char *path = mem_path(root, "loop-ctl");
+  int fd = open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0644);
+  ASSERT_NE(fd, -1);
+  _mock_open_loop_control_fd = fd;
 
   int id = find_free_loop();
   ASSERT_EQ(id, 3);
   ASSERT_EQ(_mock_loop_get_free_count, 1);
+  ASSERT_EQ(_mock_open_loop_control_count, 1);
 
-  io_unlink("/dev/loop-control");
+  _mock_open_loop_control_fd = -1;
+  mem_free(path);
+  io_rmtree(root);
+  mem_free(root);
 }
 
 static void test_find_free_loop_control_add(void)
 {
-  if (try_create_dev("/dev/loop-control") != 0)
-    return;
-
   mock_sys_reset();
   _mock_loop_get_free_ret = -1;
   _mock_loop_add_ret = 7;
+  errno = EINVAL;
+
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+  char *path = mem_path(root, "loop-ctl");
+  int fd = open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0644);
+  ASSERT_NE(fd, -1);
+  _mock_open_loop_control_fd = fd;
 
   int id = find_free_loop();
   ASSERT_EQ(id, 7);
   ASSERT_EQ(_mock_loop_get_free_count, 1);
   ASSERT_EQ(_mock_loop_add_count, 1);
 
-  io_unlink("/dev/loop-control");
+  _mock_open_loop_control_fd = -1;
+  mem_free(path);
+  io_rmtree(root);
+  mem_free(root);
 }
 
 static void test_find_free_loop_scan(void)
 {
-  if (try_create_dev("/dev/loop-control") != 0)
-    return;
-  if (try_create_dev("/dev/loop0") != 0) {
-    io_unlink("/dev/loop-control");
-    return;
-  }
-
   mock_sys_reset();
   _mock_loop_get_free_ret = -1;
   _mock_loop_add_ret = -1;
   _mock_loop_get_stat_ret = -1;
+  _mock_open_loop_control_errno = ENXIO;
+
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+  char *path = mem_path(root, "loop0");
+  int fd = open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0644);
+  ASSERT_NE(fd, -1);
+  _mock_open_loop_dev_allow = 0;
+  _mock_open_loop_dev_fd = fd;
 
   errno = ENXIO;
   int id = find_free_loop();
   ASSERT_EQ(id, 0);
 
-  io_unlink("/dev/loop0");
-  io_unlink("/dev/loop-control");
+  _mock_open_loop_dev_allow = -1;
+  _mock_open_loop_dev_fd = -1;
+  mem_free(path);
+  io_rmtree(root);
+  mem_free(root);
 }
 
 /* ── Direct function tests ── */
@@ -127,9 +138,8 @@ static void test_loop_control_alloc_get_free_ok(void)
   ASSERT_EQ(loop_control_alloc(), 3);
   ASSERT_EQ(_mock_loop_get_free_count, 1);
   _mock_loop_ctl_fd = -1;
-  close(fd);
   mem_free(path0);
-  test_rmtree(root0);
+  io_rmtree(root0);
   mem_free(root0);
 }
 
@@ -150,9 +160,8 @@ static void test_loop_control_alloc_add_ok(void)
   ASSERT_EQ(_mock_loop_get_free_count, 1);
   ASSERT_EQ(_mock_loop_add_count, 1);
   _mock_loop_ctl_fd = -1;
-  close(fd);
   mem_free(path1);
-  test_rmtree(root1);
+  io_rmtree(root1);
   mem_free(root1);
 }
 
@@ -173,9 +182,8 @@ static void test_loop_control_alloc_add_fails(void)
   ASSERT_EQ(_mock_loop_get_free_count, 1);
   ASSERT_EQ(_mock_loop_add_count, 1);
   _mock_loop_ctl_fd = -1;
-  close(fd);
   mem_free(path2);
-  test_rmtree(root2);
+  io_rmtree(root2);
   mem_free(root2);
 }
 
@@ -195,9 +203,8 @@ static void test_loop_control_alloc_enospc(void)
   ASSERT_EQ(_mock_loop_get_free_count, 1);
   ASSERT_EQ(_mock_loop_add_count, 0);
   _mock_loop_ctl_fd = -1;
-  close(fd);
   mem_free(path3);
-  test_rmtree(root3);
+  io_rmtree(root3);
   mem_free(root3);
 }
 
@@ -218,99 +225,107 @@ static void test_scan_loop_devices_empty(void)
 static void test_scan_loop_devices_with_existing(void)
 {
   mock_sys_reset();
-  _mock_loop_get_free_ret = -1;
-  _mock_loop_add_ret = -1;
 
-  /* Create a /dev/loop0 that scan will find */
-  io_unlink("/dev/loop0");
-  int fd = open("/dev/loop0", O_WRONLY | O_CREAT | O_CLOEXEC, 0644);
-  if (fd < 0)
-    return;
-  close(fd);
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+  char *path = mem_path(root, "loop0");
+  int fd = open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0644);
+  ASSERT_NE(fd, -1);
+  _mock_open_loop_dev_allow = 0;
+  _mock_open_loop_dev_fd = fd;
 
   _mock_loop_get_stat_ret = -1;
   errno = ENXIO;
   ASSERT_EQ(scan_loop_devices(), 0);
 
-  io_unlink("/dev/loop0");
+  _mock_open_loop_dev_allow = -1;
+  _mock_open_loop_dev_fd = -1;
+  mem_free(path);
+  io_rmtree(root);
+  mem_free(root);
 }
 
 static void test_scan_loop_devices_stale_errno(void)
 {
   mock_sys_reset();
-  _mock_loop_get_free_ret = -1;
-  _mock_loop_add_ret = -1;
 
-  io_unlink("/dev/loop0");
-  int fd = open("/dev/loop0", O_WRONLY | O_CREAT | O_CLOEXEC, 0644);
-  if (fd < 0)
-    return;
-  close(fd);
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+  char *path = mem_path(root, "loop0");
+  int fd = open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0644);
+  ASSERT_NE(fd, -1);
+  _mock_open_loop_dev_allow = 0;
+  _mock_open_loop_dev_fd = fd;
 
-  /* A successful stat must win even when errno still holds a stale ENXIO */
   _mock_loop_get_stat_ret = 0;
   errno = ENXIO;
   ASSERT_EQ(scan_loop_devices(), -1);
 
-  io_unlink("/dev/loop0");
+  _mock_open_loop_dev_allow = -1;
+  _mock_open_loop_dev_fd = -1;
+  mem_free(path);
+  io_rmtree(root);
+  mem_free(root);
 }
 
 static void test_loop_nodisk(void)
 {
+  mock_sys_reset();
+  _mock_loop_get_free_ret = -1;
+  _mock_loop_add_ret = -1;
   char dev[64];
   char *root4 = test_temp_root();
   ASSERT_NOT_NULL(root4);
   char *file = mem_path(root4, "loop-img");
   io_unlink(file);
   io_truncate(file, 1048576);
-  int r = io_loop(dev, sizeof(dev), file);
-  ASSERT(r == -1 || r >= 0);
-  if (r >= 0)
-    close(r);
+  ASSERT_EQ(io_loop(dev, sizeof(dev), file), -1);
   mem_free(file);
-  test_rmtree(root4);
+  io_rmtree(root4);
   mem_free(root4);
 }
 
 static void test_loop_returns_open_fd(void)
 {
-  int had_ctl = io_exists("/dev/loop-control") == 0;
-  int had_loop0 = io_exists("/dev/loop0") == 0;
-  if (try_create_dev("/dev/loop-control") != 0)
-    return;
-  if (try_create_dev("/dev/loop0") != 0) {
-    if (!had_ctl)
-      io_unlink("/dev/loop-control");
-    return;
-  }
-
   mock_sys_reset();
   _mock_loop_get_free_ret = 0;
   _mock_loop_set_fd_ret = 0;
   _mock_loop_set_status64_ret = 0;
 
-  char *root5 = test_temp_root();
-  ASSERT_NOT_NULL(root5);
-  char *file = mem_path(root5, "loop-img-ok");
-  io_unlink(file);
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+
+  char *ctl_path = mem_path(root, "loop-ctl");
+  int ctl_fd = open(ctl_path, O_RDWR | O_CREAT | O_CLOEXEC, 0644);
+  ASSERT_NE(ctl_fd, -1);
+  _mock_open_loop_control_fd = ctl_fd;
+
+  char *dev_path = mem_path(root, "loop0");
+  int dev_fd = open(dev_path, O_RDWR | O_CREAT | O_CLOEXEC, 0644);
+  ASSERT_NE(dev_fd, -1);
+  _mock_open_loop_dev_allow = 0;
+  _mock_open_loop_dev_fd = dev_fd;
+
+  char *file = mem_path(root, "loop-img-ok");
   io_truncate(file, 1048576);
 
   char dev[64];
   int r = io_loop(dev, sizeof(dev), file);
-  ASSERT(r >= 0);
+  ASSERT_EQ(r, dev_fd);
   ASSERT_EQ(strcmp(dev, "/dev/loop0"), 0);
   ASSERT_NE(fcntl(r, F_GETFD), -1);
   ASSERT_EQ(_mock_loop_set_status64_count, 1);
   ASSERT_EQ(_mock_loop_clr_fd_count, 0);
   close(r);
 
+  _mock_open_loop_control_fd = -1;
+  _mock_open_loop_dev_allow = -1;
+  _mock_open_loop_dev_fd = -1;
+  mem_free(ctl_path);
+  mem_free(dev_path);
   mem_free(file);
-  test_rmtree(root5);
-  mem_free(root5);
-  if (!had_loop0)
-    io_unlink("/dev/loop0");
-  if (!had_ctl)
-    io_unlink("/dev/loop-control");
+  io_rmtree(root);
+  mem_free(root);
 }
 
 SUITE(loop)

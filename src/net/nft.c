@@ -52,61 +52,23 @@ static int nft_recv_ack(int fd)
   return nft_drain_rest(fd, nft_ack_errno(ack, alen));
 }
 
-static void *nft_put_attr(void *p, uint16_t type, const void *data, uint16_t dlen)
-{
-  size_t alen = NLA_ALIGN(sizeof(struct nlattr) + dlen);
-  struct nlattr *a = (struct nlattr *)p;
-  a->nla_len = (uint16_t) (sizeof(struct nlattr) + dlen);
-  a->nla_type = type;
-  if (data && dlen)
-    memcpy(a + 1, data, dlen);
-  return (char *)p + alen;
-}
-
-static void *nft_put_str(void *p, uint16_t type, const char *s)
-{
-  return nft_put_attr(p, type, s, (uint16_t) (strlen(s) + 1));
-}
-
-static void *nft_put_be32(void *p, uint16_t type, uint32_t val)
+static int nft_put_be32(void *req, size_t cap, size_t *off, uint16_t type, uint32_t val)
 {
   uint32_t be = htonl(val);
-  return nft_put_attr(p, type, &be, 4);
+  return netlink_put_u32(req, cap, off, type, be);
 }
 
-static void *nft_put_nest(void *p, uint16_t type)
+static int nft_chain_hook(void *req, size_t cap, size_t *off)
 {
-  struct nlattr *a = (struct nlattr *)p;
-  a->nla_len = (uint16_t) sizeof(struct nlattr);
-  a->nla_type = type | NLA_F_NESTED;
-  return (char *)p + sizeof(struct nlattr);
-}
-
-static size_t nft_nest_off(void *req, size_t off, uint16_t type)
-{
-  return (size_t)((char *)nft_put_nest((char *)req + off, type) - (char *)req);
-}
-
-static size_t nft_str_off(void *req, size_t off, uint16_t type, const char *s)
-{
-  return (size_t)((char *)nft_put_str((char *)req + off, type, s) - (char *)req);
-}
-
-static size_t nft_be32_off(void *req, size_t off, uint16_t type, uint32_t val)
-{
-  return (size_t)((char *)nft_put_be32((char *)req + off, type, val) - (char *)req);
-}
-
-static size_t nft_chain_hook(void *req, size_t off)
-{
-  size_t hoff = off;
-  struct nlattr *ha = (struct nlattr *)((char *)req + off);
-  ha->nla_type = NFTA_CHAIN_HOOK | NLA_F_NESTED;
-  off += sizeof(struct nlattr);
-  off = nft_be32_off(req, off, NFTA_HOOK_HOOKNUM, NF_INET_POST_ROUTING);
-  off = nft_be32_off(req, off, NFTA_HOOK_PRIORITY, 100);
-  ha->nla_len = (uint16_t) (off - hoff);
-  return off;
+  size_t hoff;
+  if (netlink_nest_start(req, cap, off, NFTA_CHAIN_HOOK | NLA_F_NESTED, &hoff) != 0)
+    return -1;
+  if (nft_put_be32(req, cap, off, NFTA_HOOK_HOOKNUM, NF_INET_POST_ROUTING) != 0)
+    return -1;
+  if (nft_put_be32(req, cap, off, NFTA_HOOK_PRIORITY, 100) != 0)
+    return -1;
+  netlink_nest_end(req, hoff, off);
+  return 0;
 }
 
 struct nft_batch {
@@ -172,6 +134,9 @@ static int nft_batch_flush(struct nft_batch *b, int fd)
   return nft_recv_ack(fd);
 }
 
+#define NFT_TABLE_NAME "cage-nat"
+#define NFT_CHAIN_NAME "postrouting"
+
 #define NFT_INIT(family) \
   memset(&req, 0, sizeof(req)); \
   req.nfg.nfgen_family = (family); \
@@ -179,11 +144,10 @@ static int nft_batch_flush(struct nft_batch *b, int fd)
   req.nfg.res_id = 0; \
   off = sizeof(struct nlmsghdr) + sizeof(struct nfgenmsg)
 
-#define NFT_PUT_STR(field, val) \
-  off = (size_t)((char *)nft_put_str((char *)&req + off, (field), (val)) - (char *)&req)
-
-#define NFT_PUT_BE32(field, val) \
-  off = (size_t)((char *)nft_put_be32((char *)&req + off, (field), (val)) - (char *)&req)
+#define NFT_PUT_STR(field, val) do { \
+  if (netlink_put_string(&req, sizeof(req), &off, (field), (val)) != 0) \
+    return -1; \
+} while (0)
 
 static int nft_create_table(struct nft_batch *b, int family)
 {
@@ -195,7 +159,7 @@ static int nft_create_table(struct nft_batch *b, int family)
   } req;
   size_t off;
   NFT_INIT(family);
-  NFT_PUT_STR(NFTA_TABLE_NAME, "cage-nat");
+  NFT_PUT_STR(NFTA_TABLE_NAME, NFT_TABLE_NAME);
   return nft_batch_msg(b, (NFNL_SUBSYS_NFTABLES << 8) | NFT_MSG_NEWTABLE, NLM_F_CREATE | NLM_F_EXCL, &req, off);
 }
 
@@ -209,30 +173,29 @@ static int nft_create_chain(struct nft_batch *b, int family)
   } req;
   size_t off;
   NFT_INIT(family);
-  NFT_PUT_STR(NFTA_CHAIN_TABLE, "cage-nat");
-  NFT_PUT_STR(NFTA_CHAIN_NAME, "postrouting");
-  off = nft_chain_hook(&req, off);
+  NFT_PUT_STR(NFTA_CHAIN_TABLE, NFT_TABLE_NAME);
+  NFT_PUT_STR(NFTA_CHAIN_NAME, NFT_CHAIN_NAME);
+  if (nft_chain_hook(&req, sizeof(req), &off) != 0)
+    return -1;
   NFT_PUT_STR(NFTA_CHAIN_TYPE, "nat");
   return nft_batch_msg(b, (NFNL_SUBSYS_NFTABLES << 8) | NFT_MSG_NEWCHAIN, NLM_F_CREATE, &req, off);
 }
 
-static void nft_set_len(void *req, size_t start, size_t off)
+static int nft_put_expr_masq(void *req, size_t cap, size_t *off)
 {
-  struct nlattr *a = (struct nlattr *)((char *)req + start);
-  a->nla_len = (uint16_t) (off - start);
-}
-
-static size_t nft_put_expr_masq(void *req, size_t off)
-{
-  size_t list = off;
-  off = nft_nest_off(req, off, NFTA_RULE_EXPRESSIONS);
-  size_t elem = off;
-  off = nft_nest_off(req, off, NFTA_LIST_ELEM);
-  off = nft_str_off(req, off, NFTA_EXPR_NAME, "masq");
-  off = nft_nest_off(req, off, NFTA_EXPR_DATA);
-  nft_set_len(req, list, off);
-  nft_set_len(req, elem, off);
-  return off;
+  size_t list, elem, data;
+  if (netlink_nest_start(req, cap, off, NFTA_RULE_EXPRESSIONS | NLA_F_NESTED, &list) != 0)
+    return -1;
+  if (netlink_nest_start(req, cap, off, NFTA_LIST_ELEM | NLA_F_NESTED, &elem) != 0)
+    return -1;
+  if (netlink_put_string(req, cap, off, NFTA_EXPR_NAME, "masq") != 0)
+    return -1;
+  if (netlink_nest_start(req, cap, off, NFTA_EXPR_DATA | NLA_F_NESTED, &data) != 0)
+    return -1;
+  netlink_nest_end(req, data, off);
+  netlink_nest_end(req, elem, off);
+  netlink_nest_end(req, list, off);
+  return 0;
 }
 
 static int nft_add_masq_rule(struct nft_batch *b, int family)
@@ -245,27 +208,11 @@ static int nft_add_masq_rule(struct nft_batch *b, int family)
   } req;
   size_t off;
   NFT_INIT(family);
-  NFT_PUT_STR(NFTA_RULE_TABLE, "cage-nat");
-  NFT_PUT_STR(NFTA_RULE_CHAIN, "postrouting");
-  off = nft_put_expr_masq(&req, off);
+  NFT_PUT_STR(NFTA_RULE_TABLE, NFT_TABLE_NAME);
+  NFT_PUT_STR(NFTA_RULE_CHAIN, NFT_CHAIN_NAME);
+  if (nft_put_expr_masq(&req, sizeof(req), &off) != 0)
+    return -1;
   return nft_batch_msg(b, (NFNL_SUBSYS_NFTABLES << 8) | NFT_MSG_NEWRULE, NLM_F_CREATE | NLM_F_APPEND, &req, off);
-}
-
-int netfilter_open(int *fd)
-{
-  int s = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_NETFILTER);
-  if (s < 0)
-    return -1;
-  struct sockaddr_nl sa;
-  memset(&sa, 0, sizeof(sa));
-  sa.nl_family = AF_NETLINK;
-  sa.nl_groups = 0;
-  if (bind(s, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-    close(s);
-    return -1;
-  }
-  *fd = s;
-  return 0;
 }
 
 static int nft_build(struct nft_batch *b, int family)
@@ -302,3 +249,11 @@ int net_setup_nat6(void)
 {
   return nft_setup_family(AF_INET6);
 }
+
+// cppcheck-suppress staticFunction
+int __sys_netfilter_open(int *fd)
+{
+  return netfilter_open(fd);
+}
+
+weak_alias(__sys_netfilter_open, sys_netfilter_open);

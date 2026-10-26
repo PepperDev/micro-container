@@ -5,6 +5,10 @@
 // cppcheck-suppress missingIncludeSystem
 #include <stdint.h>
 
+#define CAGE_VETH_HOST_PFX "cage-veth"
+#define CAGE_VETH_PEER_NAME "eth0"
+#define CAGE_VETH_MAX_ID 126
+
 #define SUBNET_A 172
 #define SUBNET_B 24
 
@@ -20,7 +24,8 @@ int net_setup_child(int id);
 int net_enable_ip_forward(void);
 int net_enable_ip6_forward(void);
 int net_setup_nat(void);
-int net_setup_nat6(void);
+/* unused */ int net_setup_nat6(void);
 int netfilter_open(int *fd);
+int sys_netfilter_open(int *fd);
 
 #endif

@@ -51,6 +51,9 @@ E2E_UID=${CAGE_E2E_UID:-1000}
 E2E_GID=${CAGE_E2E_GID:-1000}
 E2E_USER=${CAGE_E2E_USER:-e2e}
 E2E_HOME=${CAGE_E2E_HOME:-/home/e2e}
+E2E_STRACE=${CAGE_E2E_STRACE:-0}
+E2E_STRACE_DIR=${CAGE_E2E_STRACE_DIR:-/tmp/cage-e2e/traces}
+E2E_STRACE_CTR_DIR=/tmp/cage-e2e/strace
 
 E2E_TEST_NAME=
 E2E_RESULTS_FILE=
@@ -87,14 +90,26 @@ e2e_require_docker() {
 # fixtures that create or own root state.
 
 e2e_exec() {
+  if [ "$E2E_STRACE" = 1 ]; then
+    _e2e_strace_wrap_root "$@"
+    return $?
+  fi
   docker exec -u "$E2E_UID:$E2E_GID" "$CAGE_CTR" "$@"
 }
 
 e2e_exec_i() {
+  if [ "$E2E_STRACE" = 1 ]; then
+    _e2e_strace_wrap_root "$@"
+    return $?
+  fi
   docker exec -i -u "$E2E_UID:$E2E_GID" "$CAGE_CTR" "$@"
 }
 
 e2e_exec_d() {
+  if [ "$E2E_STRACE" = 1 ]; then
+    _e2e_strace_wrap_root "$@"
+    return $?
+  fi
   docker exec -d -u "$E2E_UID:$E2E_GID" "$CAGE_CTR" "$@"
 }
 
@@ -181,6 +196,10 @@ e2e_provision() {
   then
     log "e2e: installing container packages (socat, acl)"
     docker exec "$CAGE_CTR" apk add --no-cache socat acl >/dev/null 2>&1
+  fi
+  if [ "$E2E_STRACE" = 1 ] && ! docker exec "$CAGE_CTR" sh -c 'command -v strace >/dev/null 2>&1'; then
+    log "e2e: installing container packages (strace)"
+    docker exec "$CAGE_CTR" apk add --no-cache -q strace >/dev/null 2>&1
   fi
 
   # Unprivileged container user: tests run as this user and rely on cage's
@@ -302,6 +321,37 @@ e2e_socket_down() {
 e2e_socket_recv() {
   # shellcheck disable=SC2016 # $1 and $2 expand in the container shell, not the host
   e2e_exec sh -c 'cat "$1/recv/$2" 2>/dev/null' _ "$E2E_CTR_WORK" "$1"
+}
+
+# --- strace helpers ---------------------------------------------------
+
+_e2e_strace_wrap() {
+  local trace_name trace_file
+  trace_name="${E2E_TEST_NAME:-e2e}-$(date +%s)-$$-$RANDOM"
+  trace_file="$E2E_STRACE_CTR_DIR/${trace_name}.trace"
+  docker exec -u "$E2E_UID:$E2E_GID" "$CAGE_CTR" sh -c 'mkdir -p "$1"' _ "$E2E_STRACE_CTR_DIR" >/dev/null 2>&1 || :
+  docker exec -u "$E2E_UID:$E2E_GID" "$CAGE_CTR" sh -c 't="$1"; shift; strace -tt -f -o "$t" "$@"' _ "$trace_file" "$@"
+}
+
+_e2e_strace_wrap_root() {
+  local trace_name trace_file
+  trace_name="${E2E_TEST_NAME:-e2e}-$(date +%s)-$$-$RANDOM"
+  trace_file="$E2E_STRACE_CTR_DIR/${trace_name}.trace"
+  docker exec "$CAGE_CTR" sh -c 'mkdir -p "$1"' _ "$E2E_STRACE_CTR_DIR" >/dev/null 2>&1 || :
+  docker exec "$CAGE_CTR" sh -c 't="$1"; shift; strace -tt -f -o "$t" "$@"' _ "$trace_file" "$@"
+}
+
+_e2e_strace_collect() {
+  if [ "$E2E_STRACE" != 1 ]; then
+    return 0
+  fi
+  mkdir -p "$E2E_STRACE_DIR"
+  docker exec "$CAGE_CTR" sh -c '
+    if [ -d "$1" ] && [ "$(ls -A "$1" 2>/dev/null | wc -l)" -gt 0 ]; then
+      tar -C "$1" -cf - . 2>/dev/null
+    fi
+  ' _ "$E2E_STRACE_CTR_DIR" | tar -C "$E2E_STRACE_DIR" -xf - 2>/dev/null || :
+  docker exec "$CAGE_CTR" sh -c 'rm -rf "$1"/*' _ "$E2E_STRACE_CTR_DIR" >/dev/null 2>&1 || :
 }
 
 # --- cage helpers -----------------------------------------------------
@@ -436,7 +486,11 @@ e2e_run() {
 }
 
 e2e_end() {
+  _e2e_strace_collect
   log "### $E2E_TEST_NAME: $E2E_PASS passed, $E2E_FAIL failed"
+  if [ "$E2E_STRACE" = 1 ]; then
+    log "e2e: strace traces copied to $E2E_STRACE_DIR"
+  fi
   [ "$E2E_FAIL" -eq 0 ]
 }
 

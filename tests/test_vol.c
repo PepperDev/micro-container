@@ -26,7 +26,7 @@ static void test_mount_user_volume_dir(void)
   ASSERT_EQ(_mock_mount_count, 2);
 
   mem_free(host);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -48,7 +48,7 @@ static void test_mount_user_volume_empty_root(void)
   ASSERT_EQ(mount_user_volume(&v, root), 0);
 
   mem_free(host);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -71,7 +71,7 @@ static void test_mount_user_volume_host_created(void)
   ASSERT_EQ(io_isdir(host), 0);
 
   mem_free(host);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -162,7 +162,7 @@ static void test_mount_user_volume_file(void)
   ASSERT_EQ(_mock_mount_count, 2);
 
   mem_free(host);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -185,7 +185,7 @@ static void test_mount_user_volume_mount_bind_fails(void)
   ASSERT_EQ(_mock_mount_count, 1);
 
   mem_free(host);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -211,7 +211,7 @@ static void test_parse_and_mount_volume(void)
 
   mem_free(spec);
   mem_free(host);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -237,7 +237,7 @@ static void test_mount_user_volume_create_guest_dir_fails(void)
   ASSERT_EQ(mount_user_volume(&v, root), -1);
 
   mem_free(host);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -263,7 +263,7 @@ static void test_mount_user_volume_create_guest_file_fails(void)
   ASSERT_EQ(mount_user_volume(&v, root), -1);
 
   mem_free(host);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -288,7 +288,7 @@ static void test_mount_user_volume_private_fails(void)
   ASSERT_EQ(_mock_mount_count, 2);
 
   mem_free(host);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 

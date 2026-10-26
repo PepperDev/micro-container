@@ -17,25 +17,17 @@
 // cppcheck-suppress missingIncludeSystem
 #include <unistd.h>
 
-static int open_loop_control_dev(void)
-{
-  int fd = open("/dev/loop-control", O_RDWR | O_CLOEXEC);
-  if (fd >= 0 || errno != ENOENT)
-    return fd;
-  if (modprobe_load("loop") != 0)
-    return -1;
-  return open("/dev/loop-control", O_RDWR | O_CLOEXEC);
-}
-
 // cppcheck-suppress staticFunction
 int __loop_open_control(void)
 {
-  int e = io_exists("/dev/loop-control");
-  if (e == 1)
-    modprobe_load("loop");
-  else if (e != 0)
-    return -1;
-  return open_loop_control_dev();
+  int e = sys_access("/dev/loop-control", F_OK);
+  if (e != 0) {
+    if (errno != ENOENT && errno != EACCES)
+      return -1;
+    if (modprobe_load("loop") != 0)
+      return -1;
+  }
+  return sys_open_loop_control();
 }
 
 weak_alias(__loop_open_control, loop_open_control);
@@ -65,9 +57,7 @@ int loop_control_alloc(void)
 // cppcheck-suppress staticFunction
 int try_open_loop_dev(int n)
 {
-  char name[32];
-  snprintf(name, sizeof(name), "/dev/loop%d", n);
-  return open(name, O_RDWR | O_CLOEXEC);
+  return sys_open_loop_dev(n);
 }
 
 // cppcheck-suppress staticFunction
@@ -132,7 +122,7 @@ int io_loop(char *dev, size_t devsz, const char *file)
   int img_fd = open_rw(file);
   if (img_fd < 0)
     return -1;
-  int loop_fd = open_rw(dev);
+  int loop_fd = sys_open_loop_dev(id);
   if (loop_fd < 0) {
     close(img_fd);
     return -1;

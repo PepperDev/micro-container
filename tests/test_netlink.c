@@ -1,5 +1,6 @@
 #include "framework.h"
 #include "net/netlink.h"
+#include "net/net.h"
 #include <sys/socket.h>
 #include <string.h>
 #include <errno.h>
@@ -54,6 +55,43 @@ static void test_put_overflow(void)
   int r = netlink_put_string(buf, sizeof(buf), &off, IFLA_IFNAME,
                              "very-long-interface-name-that-exceeds-buffer");
   ASSERT_EQ(r, -1);
+}
+
+static void test_put_u32(void)
+{
+  char buf[128];
+  size_t len = netlink_request_len();
+  memset(buf, 0, sizeof(buf));
+  netlink_request_fill(buf, len, RTM_GETLINK, NLM_F_DUMP, AF_UNSPEC);
+  size_t off = len;
+  ASSERT_EQ(netlink_put_u32(buf, sizeof(buf), &off, IFLA_MTU, 1500), 0);
+  ASSERT_EQ(off, len + NLA_ALIGN(sizeof(struct nlattr) + 4));
+  struct nlmsghdr *h = (struct nlmsghdr *)buf;
+  ASSERT_EQ(h->nlmsg_len, len);
+  struct nlattr *attr = (struct nlattr *)((char *)h + NLMSG_ALIGN(len));
+  ASSERT_EQ(attr->nla_type, IFLA_MTU);
+  ASSERT_EQ(attr->nla_len, sizeof(struct nlattr) + 4);
+  uint32_t val;
+  memcpy(&val, NLA_DATA(attr), sizeof(val));
+  ASSERT_EQ(val, 1500);
+}
+
+static void test_put_attr_overflow(void)
+{
+  char buf[32];
+  size_t off = netlink_request_len();
+  struct nl_attr attr = {.type = IFA_ADDRESS,.len = 64,.data = NULL };
+  ASSERT_EQ(netlink_put_attr(buf, sizeof(buf), &off, &attr), -1);
+  ASSERT_EQ(off, netlink_request_len());
+}
+
+static void test_put_attr_too_long(void)
+{
+  char buf[65536];
+  size_t off = 0;
+  struct nl_attr attr = {.type = IFA_ADDRESS,.len = UINT16_MAX,.data = NULL };
+  ASSERT_EQ(netlink_put_attr(buf, sizeof(buf), &off, &attr), -1);
+  ASSERT_EQ(off, 0);
 }
 
 static void test_open_close(void)
@@ -448,23 +486,6 @@ static void test_find_ifname(void)
   netlink_close(fd);
 }
 
-static void test_max_veth_id(void)
-{
-  int fd;
-  ASSERT_EQ(netlink_open(&fd), 0);
-  char buf[4096];
-  int len = netlink_fill_dump_link(buf, sizeof(buf));
-  ASSERT(len > 0);
-  ASSERT_EQ(netlink_send(fd, buf, (size_t)len), 0);
-  size_t rlen;
-  ASSERT_EQ(netlink_recv_dump(fd, buf, sizeof(buf), &rlen), 0);
-  int id;
-  int r = netlink_max_veth_id(buf, rlen, "cage-veth", &id);
-  ASSERT_EQ(r, 0);
-  ASSERT_EQ(id, -1);
-  netlink_close(fd);
-}
-
 static void test_alloc_veth_id(void)
 {
   int fd;
@@ -476,24 +497,65 @@ static void test_alloc_veth_id(void)
   netlink_close(fd);
 }
 
-static void test_max_veth_id_crafted(void)
+static size_t append_link(char *buf, size_t cap, size_t off, const char *name)
 {
-  char buf[256];
-  memset(buf, 0, sizeof(buf));
-  struct nlmsghdr *h = (struct nlmsghdr *)buf;
+  size_t base = off + NLMSG_HDRLEN + sizeof(struct ifinfomsg);
+  size_t l = strlen(name) + 1;
+  size_t alen = NLA_ALIGN(sizeof(struct nlattr) + l);
+  if (base + alen > cap)
+    return 0;
+  struct nlmsghdr *h = (struct nlmsghdr *)(buf + off);
+  memset(h, 0, base - off);
   h->nlmsg_type = RTM_NEWLINK;
   h->nlmsg_flags = NLM_F_REQUEST;
   h->nlmsg_seq = 1;
   struct ifinfomsg *ifi = (struct ifinfomsg *)NLMSG_DATA(h);
   ifi->ifi_family = AF_UNSPEC;
-  ifi->ifi_index = 5;
-  size_t off = NLMSG_HDRLEN + sizeof(struct ifinfomsg);
-  ASSERT_EQ(netlink_put_string(buf, sizeof(buf), &off, IFLA_IFNAME, "cage-veth5"), 0);
-  h->nlmsg_len = (uint32_t) off;
+  struct nlattr *a = (struct nlattr *)(buf + base);
+  a->nla_len = (uint16_t) (sizeof(struct nlattr) + l);
+  a->nla_type = IFLA_IFNAME;
+  memcpy(a + 1, name, l);
+  h->nlmsg_len = (uint32_t) (base + alen - off);
+  return off + NLMSG_ALIGN(h->nlmsg_len);
+}
+
+static void test_lowest_free_veth_id_crafted(void)
+{
+  char buf[512];
+  memset(buf, 0, sizeof(buf));
+  size_t off = append_link(buf, sizeof(buf), 0, "cage-veth0");
+  ASSERT(off > 0);
+  off = append_link(buf, sizeof(buf), off, "cage-veth2");
+  ASSERT(off > 0);
   int id;
-  int r = netlink_max_veth_id(buf, off, "cage-veth", &id);
-  ASSERT_EQ(r, 1);
-  ASSERT_EQ(id, 5);
+  ASSERT_EQ(netlink_lowest_free_veth_id(buf, off, "cage-veth", &id), 0);
+  ASSERT_EQ(id, 1);
+}
+
+static void test_lowest_free_veth_id_empty(void)
+{
+  char buf[256];
+  memset(buf, 0, sizeof(buf));
+  size_t off = append_link(buf, sizeof(buf), 0, "cage-veth3");
+  ASSERT(off > 0);
+  int id;
+  ASSERT_EQ(netlink_lowest_free_veth_id(buf, off, "cage-other", &id), 0);
+  ASSERT_EQ(id, 0);
+}
+
+static void test_lowest_free_veth_id_exhausted(void)
+{
+  char buf[8192];
+  char name[32];
+  memset(buf, 0, sizeof(buf));
+  size_t off = 0;
+  for (int i = 0; i <= CAGE_VETH_MAX_ID; i++) {
+    snprintf(name, sizeof(name), "cage-veth%d", i);
+    off = append_link(buf, sizeof(buf), off, name);
+    ASSERT(off > 0);
+  }
+  int id = -1;
+  ASSERT_EQ(netlink_lowest_free_veth_id(buf, off, "cage-veth", &id), -1);
 }
 
 static void ack_err(char *buf, size_t *len, int err)
@@ -557,6 +619,9 @@ SUITE(netlink)
   RUN_TEST(request_fill);
   RUN_TEST(put_string);
   RUN_TEST(put_overflow);
+  RUN_TEST(put_u32);
+  RUN_TEST(put_attr_overflow);
+  RUN_TEST(put_attr_too_long);
   RUN_TEST(open_close);
   RUN_TEST(send_recv);
   RUN_TEST(recv_dump);
@@ -578,9 +643,10 @@ SUITE(netlink)
   RUN_TEST(fill_dump_link);
   RUN_TEST(fill_dump_link_small_buf);
   RUN_TEST(find_ifname);
-  RUN_TEST(max_veth_id);
   RUN_TEST(alloc_veth_id);
-  RUN_TEST(max_veth_id_crafted);
+  RUN_TEST(lowest_free_veth_id_crafted);
+  RUN_TEST(lowest_free_veth_id_empty);
+  RUN_TEST(lowest_free_veth_id_exhausted);
   RUN_TEST(ack_result_short);
   RUN_TEST(ack_result_truncated_error);
   RUN_TEST(ack_result_ok);

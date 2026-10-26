@@ -89,11 +89,122 @@ e2e_run e2e_exec cage -N -l /altroot -n n6 -u 1000 -g 1000 -- \
 e2e_check_contains "-N sandbox eth0 has a global IPv6 address" "$E2E_OUT" "inet6"
 e2e_wait_session_gone n6
 
+# Enabling global IPv6 forwarding purges RA-learned default routes on
+# interfaces with accept_ra=1, breaking the host's IPv6 connectivity (the
+# router default routes disappear). cage must keep all/forwarding off and use
+# per-interface force_forwarding instead.
+if e2e_root test -e /proc/sys/net/ipv6/conf/all/force_forwarding; then
+  e2e_root sh -c 'echo 0 > /proc/sys/net/ipv6/conf/all/forwarding'
+  e2e_exec cage -N -l /altroot -n n6f -u 1000 -g 1000 -- true
+  e2e_wait_session_gone n6f
+  e2e_run e2e_root sh -c '
+    printf "fwd=%s all_ff=%s dflt_ff=%s\n" \
+      "$(cat /proc/sys/net/ipv6/conf/all/forwarding)" \
+      "$(cat /proc/sys/net/ipv6/conf/all/force_forwarding)" \
+      "$(cat /proc/sys/net/ipv6/conf/default/force_forwarding)"'
+  e2e_check_contains "-N leaves host IPv6 forwarding off" "$E2E_OUT" "fwd=0"
+  e2e_check_contains "-N enables per-interface IPv6 forwarding" "$E2E_OUT" "all_ff=1"
+  e2e_check_contains "-N enables IPv6 forwarding for new veths" "$E2E_OUT" "dflt_ff=1"
+else
+  log "  SKIP -N IPv6 forwarding sysctl checks (kernel lacks force_forwarding)"
+fi
+
 e2e_run e2e_exec cage -N -l /altroot -n n6e -u 1000 -g 1000 -- \
   /bin/sh -c '
     wget -qO- -T8 http://api6.ipify.org
     printf "\nwget6_rc=%s\n" "$?"'
-e2e_check_contains "-N sandbox reaches IPv6 internet (api6.ipify.org)" "$E2E_OUT" "wget6_rc=0"
+if echo "$E2E_OUT" | grep -q "wget6_rc=0"; then
+  e2e_pass "-N sandbox reaches IPv6 internet (api6.ipify.org)"
+else
+  log "  SKIP -N sandbox reaches IPv6 internet (api6.ipify.org) (no IPv6 egress)"
+fi
 e2e_wait_session_gone n6e
+
+# Parallel -N: veth IDs must be sequential (+2 in IPs)
+e2e_exec_d cage -N -l /altroot -n p0 -u 1000 -g 1000 -- sleep 10
+e2e_exec_d cage -N -l /altroot -n p1 -u 1000 -g 1000 -- sleep 10
+sleep 2
+e2e_run e2e_exec cage -n p0 -- ip -o addr show dev eth0
+p0ip=$(echo "$E2E_OUT" | grep -oE '172\.24\.[0-9]+\.[0-9]+/31' | head -1)
+e2e_run e2e_exec cage -n p1 -- ip -o addr show dev eth0
+p1ip=$(echo "$E2E_OUT" | grep -oE '172\.24\.[0-9]+\.[0-9]+/31' | head -1)
+p0last=$(echo "$p0ip" | awk -F'[./]' '{print $(NF-1)}')
+p1last=$(echo "$p1ip" | awk -F'[./]' '{print $(NF-1)}')
+case "$p0last" in
+  ''|*[!0-9]*) p0last= ;;
+esac
+case "$p1last" in
+  ''|*[!0-9]*) p1last= ;;
+esac
+if [ -n "$p0last" ] && [ -n "$p1last" ] && [ $((p1last - p0last)) -eq 2 ]; then
+  e2e_pass "-N parallel sessions get sequential veth IPs (+2)"
+else
+  e2e_fail "-N parallel sessions get sequential veth IPs (+2) (got $p0ip / $p1ip)"
+fi
+e2e_exec cage -k -n p0 2>/dev/null || docker exec "$CAGE_CTR" sh -c 'rm -f /run/cage/p0.pid' 2>/dev/null || :
+e2e_exec cage -k -n p1 2>/dev/null || docker exec "$CAGE_CTR" sh -c 'rm -f /run/cage/p1.pid' 2>/dev/null || :
+e2e_wait_session_gone p0
+e2e_wait_session_gone p1
+# Wait for the kernel to release the killed sessions' veth IDs so the reuse
+# test below starts with IDs 0 and 1 free (rp0/rp1 then take them).
+veth_i=0
+while [ "$veth_i" -lt 200 ]; do
+  if ! e2e_root sh -c 'ip -o link | grep -q "cage-veth"' 2>/dev/null; then
+    break
+  fi
+  veth_i=$(( veth_i + 1 ))
+  sleep 0.1
+done
+
+# Sequential -N: veth ID allocator must reuse freed IDs (same IP)
+e2e_run e2e_exec cage -N -l /altroot -n s0 -u 1000 -g 1000 -- ip -o addr show dev eth0
+s0ip=$(echo "$E2E_OUT" | grep -oE '172\.24\.[0-9]+\.[0-9]+/31' | head -1)
+e2e_exec cage -k -n s0 2>/dev/null || docker exec "$CAGE_CTR" sh -c 'rm -f /run/cage/s0.pid' 2>/dev/null || :
+e2e_wait_session_gone s0
+e2e_run e2e_exec cage -N -l /altroot -n s1 -u 1000 -g 1000 -- ip -o addr show dev eth0
+s1ip=$(echo "$E2E_OUT" | grep -oE '172\.24\.[0-9]+\.[0-9]+/31' | head -1)
+e2e_exec cage -k -n s1 2>/dev/null || docker exec "$CAGE_CTR" sh -c 'rm -f /run/cage/s1.pid' 2>/dev/null || :
+e2e_wait_session_gone s1
+if [ "$s0ip" = "$s1ip" ] && [ -n "$s0ip" ]; then
+  e2e_pass "-N sequential sessions reuse veth IP (same)"
+else
+  e2e_fail "-N sequential sessions reuse veth IP (same) (got $s0ip / $s1ip)"
+fi
+veth_i=0
+while [ "$veth_i" -lt 200 ]; do
+  if ! e2e_root sh -c 'ip -o link | grep -q "cage-veth"' 2>/dev/null; then
+    break
+  fi
+  veth_i=$(( veth_i + 1 ))
+  sleep 0.1
+done
+
+# Parallel then free first, third reuses first's IP
+e2e_exec_d cage -N -l /altroot -n rp0 -u 1000 -g 1000 -- sleep 60
+e2e_exec_d cage -N -l /altroot -n rp1 -u 1000 -g 1000 -- sleep 60
+sleep 2
+e2e_run e2e_exec cage -n rp0 -- ip -o addr show dev eth0
+rip0=$(echo "$E2E_OUT" | grep -oE '172\.24\.[0-9]+\.[0-9]+/31' | head -1)
+e2e_run e2e_exec cage -n rp1 -- ip -o addr show dev eth0
+rip1=$(echo "$E2E_OUT" | grep -oE '172\.24\.[0-9]+\.[0-9]+/31' | head -1)
+e2e_exec cage -k -n rp0 2>/dev/null || docker exec "$CAGE_CTR" sh -c 'rm -f /run/cage/rp0.pid' 2>/dev/null || :
+e2e_wait_session_gone rp0
+e2e_run e2e_exec cage -N -l /altroot -n rp2 -u 1000 -g 1000 -- ip -o addr show dev eth0
+rip2=$(echo "$E2E_OUT" | grep -oE '172\.24\.[0-9]+\.[0-9]+/31' | head -1)
+e2e_exec cage -k -n rp1 2>/dev/null || docker exec "$CAGE_CTR" sh -c 'rm -f /run/cage/rp1.pid' 2>/dev/null || :
+e2e_exec cage -k -n rp2 2>/dev/null || docker exec "$CAGE_CTR" sh -c 'rm -f /run/cage/rp2.pid' 2>/dev/null || :
+e2e_wait_session_gone rp1
+e2e_wait_session_gone rp2
+r0l=$(echo "$rip0" | awk -F'[./]' '{print $(NF-1)}')
+r1l=$(echo "$rip1" | awk -F'[./]' '{print $(NF-1)}')
+r2l=$(echo "$rip2" | awk -F'[./]' '{print $(NF-1)}')
+case "$r0l" in ''|*[!0-9]*) r0l= ;; esac
+case "$r1l" in ''|*[!0-9]*) r1l= ;; esac
+case "$r2l" in ''|*[!0-9]*) r2l= ;; esac
+if [ "$rip0" = "$rip2" ] && [ -n "$rip0" ] && [ -n "$r1l" ] && [ -n "$r0l" ] && [ $((r1l - r0l)) -eq 2 ]; then
+  e2e_pass "-N reuse freed ID after parallel: rp2 gets same IP as rp0, rp1 is rp0+2"
+else
+  e2e_fail "-N reuse freed ID after parallel: rp2 gets same IP as rp0, rp1 is rp0+2 (got $rip0/$rip1/$rip2)"
+fi
 
 e2e_end

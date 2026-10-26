@@ -36,7 +36,7 @@ static void test_mount_misc_basic(void)
   ASSERT_EQ(io_isdir(etc), 0);
   mem_free(etc);
 
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -50,7 +50,7 @@ static void test_mount_misc_resolv_mount_fails(void)
 
   ASSERT_EQ(mount_misc(root, &default_cfg), -1);
 
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -67,7 +67,7 @@ static void test_setup_resolv_mkdir_fails(void)
 
   ASSERT_EQ(mount_misc(root, &default_cfg), -1);
 
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -87,7 +87,7 @@ static void test_setup_resolv_touch_fails(void)
 
   ASSERT_EQ(mount_misc(root, &default_cfg), -1);
 
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -107,7 +107,7 @@ static void test_setup_run_dirs_lock_fails(void)
 
   ASSERT_EQ(mount_misc(root, &default_cfg), -1);
 
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -130,7 +130,7 @@ static void test_setup_run_dirs_user_fails(void)
 
   ASSERT_EQ(mount_misc(root, &default_cfg), -1);
 
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -156,7 +156,7 @@ static void test_devshm_blocked(void)
 
   ASSERT_EQ(mount_misc(root, &default_cfg), -1);
 
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -177,7 +177,7 @@ static void test_setup_devshm_nonexistent(void)
   ASSERT_EQ(io_isdir(shm), 0);
   mem_free(shm);
 
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -193,7 +193,7 @@ static void test_mount_misc_resolv_mount_early_fail(void)
   ASSERT_EQ(mount_misc(root, &default_cfg), -1);
   ASSERT_EQ(_mock_mount_count, 1);
 
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -217,7 +217,7 @@ static void test_mount_misc_cgroup_fail_after_high(void)
   ASSERT_EQ(mount_misc(root, &cfg), 0);
   ASSERT_EQ(_mock_mount_count, 2);
 
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -239,7 +239,7 @@ static void test_setup_devshm_run_shm_blocked_by_file(void)
 
   ASSERT_EQ(mount_misc(root, &default_cfg), -1);
 
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -256,7 +256,7 @@ static void test_mount_misc_all_mounts_fail(void)
   ASSERT_EQ(mount_misc(root, &default_cfg), -1);
   ASSERT_EQ(_mock_mount_count, 1);
 
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -292,7 +292,7 @@ static void test_mount_misc_verify_directory_structure(void)
   mem_free(resolv);
   mem_free(etc);
 
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -317,7 +317,7 @@ static void test_setup_run_dirs_both_fail(void)
 
   ASSERT_EQ(mount_misc(root, &default_cfg), -1);
 
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -340,7 +340,7 @@ static void test_mount_misc_mount_count(void)
   ASSERT_EQ(mount_misc(root, &cfg), 0);
   ASSERT_EQ(_mock_mount_count, 2);
 
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -359,28 +359,71 @@ static void test_setup_resolv_direct(void)
   char *etc = mem_path(root, "etc");
   ASSERT_EQ(io_isdir(etc), 0);
   mem_free(etc);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
-static void test_setup_resolv_tmpfs_path(void)
+static void test_setup_resolv_default_dns_bind(void)
 {
   mock_sys_reset();
   _mock_mount_ret = 0;
-  _mock_umount_ret = 0;
   _mock_needs_default_dns = 1;
 
   char *root = test_temp_root();
   ASSERT_NOT_NULL(root);
 
   ASSERT_EQ(setup_resolv(root, &default_cfg), 0);
+  ASSERT_EQ(_mock_mount_count, 1);
+  ASSERT_EQ(_mock_umount_count, 0);
 
   char *etc = mem_path(root, "etc");
   ASSERT_EQ(io_isdir(etc), 0);
   mem_free(etc);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
   _mock_needs_default_dns = -1;
+}
+
+static void test_setup_resolv_default_dns_mount_fails(void)
+{
+  mock_sys_reset();
+  _mock_mount_ret = -1;
+  _mock_needs_default_dns = 1;
+
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+
+  ASSERT_EQ(setup_resolv(root, &default_cfg), -1);
+  ASSERT_EQ(_mock_mount_count, 1);
+
+  io_rmtree(root);
+  mem_free(root);
+  _mock_needs_default_dns = -1;
+}
+
+static void test_setup_resolv_oversized_rejected(void)
+{
+  mock_sys_reset();
+  _mock_mount_ret = 0;
+
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+  char *etc = mem_path(root, "etc");
+  ASSERT_EQ(io_mkdir(etc), 0);
+  char *resolv = mem_path(root, "etc/resolv.conf");
+  FILE *f = fopen(resolv, "w");
+  ASSERT_NOT_NULL(f);
+  for (int i = 0; i < 70000; i++)
+    fputc('x', f);
+  fclose(f);
+
+  ASSERT_EQ(setup_resolv(root, &default_cfg), -1);
+  ASSERT_EQ(_mock_mount_count, 0);
+
+  mem_free(resolv);
+  mem_free(etc);
+  io_rmtree(root);
+  mem_free(root);
 }
 
 static void test_setup_resolv_dangling_symlink(void)
@@ -403,7 +446,7 @@ static void test_setup_resolv_dangling_symlink(void)
   ASSERT(S_ISREG(st.st_mode));
 
   mem_free(resolv);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -431,7 +474,7 @@ static void test_setup_resolv_valid_symlink_replaced(void)
   mem_free(resolv);
   mem_free(target);
   mem_free(etc);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -453,7 +496,7 @@ static void test_setup_run_dirs_direct(void)
   ASSERT_EQ(io_isdir(user), 0);
   mem_free(user);
   mem_free(lock);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -476,7 +519,7 @@ static void test_setup_devshm_direct(void)
   char *shm = mem_path(root, "run/shm");
   ASSERT_EQ(io_isdir(shm), 0);
   mem_free(shm);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -494,7 +537,7 @@ static void test_mount_cgroups_direct(void)
   int r = mount_cgroups(root, 1);
   ASSERT_EQ(r, 0);
   ASSERT_EQ(io_isdir(mem_path(root, "sys/fs/cgroup")), 0);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -511,7 +554,7 @@ static void test_mount_cgroup_v2_direct(void)
   char *cg = mem_path(root, "sys/fs/cgroup");
   ASSERT_EQ(io_isdir(cg), 0);
   mem_free(cg);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -527,7 +570,7 @@ static void test_mount_cgroup_v2_dir_exists(void)
   mem_free(cg);
 
   ASSERT_EQ(mount_cgroup_v2(root), 0);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -565,7 +608,7 @@ static void test_mount_cgroup_tmpfs_direct(void)
 
   ASSERT_EQ(mount_cgroup_tmpfs(cg), 0);
   ASSERT_EQ(io_isdir(cg), 0);
-  test_rmtree(cg);
+  io_rmtree(cg);
   mem_free(cg);
 }
 
@@ -573,15 +616,19 @@ static void test_mount_cgroup_v1_direct(void)
 {
   mock_sys_reset();
   _mock_mount_ret = 0;
+  _mock_cgroups = "cpu\t0\t1\t1\nmemory\t0\t1\t1\n";
 
   char *root = test_temp_root();
   ASSERT_NOT_NULL(root);
 
   int r = mount_cgroup_v1(root);
   ASSERT_EQ(r, 0);
+  ASSERT_EQ(_mock_mount_count, 3);
 
-  ASSERT_EQ(io_isdir(mem_path(root, "sys/fs/cgroup")), 0);
-  test_rmtree(root);
+  char *cg = mem_path(root, "sys/fs/cgroup");
+  ASSERT_EQ(io_isdir(cg), 0);
+  mem_free(cg);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -617,7 +664,9 @@ SUITE(setup)
   RUN_TEST(mount_misc_mount_count);
 
   RUN_TEST(setup_resolv_direct);
-  RUN_TEST(setup_resolv_tmpfs_path);
+  RUN_TEST(setup_resolv_default_dns_bind);
+  RUN_TEST(setup_resolv_default_dns_mount_fails);
+  RUN_TEST(setup_resolv_oversized_rejected);
   RUN_TEST(setup_resolv_dangling_symlink);
   RUN_TEST(setup_resolv_valid_symlink_replaced);
   RUN_TEST(setup_run_dirs_direct);

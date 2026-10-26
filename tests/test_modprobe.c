@@ -1,6 +1,7 @@
 #include "framework.h"
 #include "test_util.h"
 #include "pkg/modprobe.h"
+#include "pkg/modload.h"
 #include "pkg/resolve.h"
 #include "util/io.h"
 #include "util/mem.h"
@@ -12,6 +13,16 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/mman.h>
+
+static int scan_modules(const char *path, const char *name)
+{
+  buf_t buf = BUF_INIT;
+  if (io_read(path, &buf) != 0)
+    return -1;
+  int r = scan_module_list(buf.data, buf.len, name);
+  buf_free(&buf);
+  return r;
+}
 
 static int dep_setup(const char *moddir, const char *content)
 {
@@ -42,10 +53,9 @@ static void dep_teardown(const char *moddir)
   snprintf(path, sizeof(path), "%s/%s/modules.dep", moddir, uts.release);
   io_unlink(path);
   snprintf(path, sizeof(path), "%s/%s", moddir, uts.release);
-  io_rmdir(path);
-  io_rmdir(moddir);
+  io_rmtree(path);
+  io_rmtree(moddir);
   _mock_mod_dir = NULL;
-  resolve_cache_clear();
 }
 
 /* ── Existing tests ── */
@@ -132,7 +142,7 @@ static void test_modprobe_load_loaded_from_proc(void)
   ASSERT_EQ(scan_modules(proc, "bridge"), 1);
   ASSERT_EQ(scan_modules(proc, "xt_conntrack"), 0);
   mem_free(proc);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -152,7 +162,7 @@ static void test_modprobe_load_loaded_from_modules_builtin(void)
   ASSERT_EQ(scan_modules(builtin, "nf_nat"), 1);
   ASSERT_EQ(scan_modules(builtin, "ext4"), 1);
   mem_free(builtin);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -194,7 +204,7 @@ static void test_modprobe_load_confirmed_loaded(void)
   ASSERT_EQ(scan_modules(proc, "veth"), 1);
   ASSERT_EQ(scan_modules(proc, "bridge"), 1);
   mem_free(proc);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -243,7 +253,6 @@ static void test_modprobe_load_resolve_infrastructure(void)
   snprintf(dep, sizeof(dep), "../../../../tmp/%s/cage-mod-resolve.ko:\n", root + 5);
   ASSERT_EQ(dep_setup(moddir, dep), 0);
   _mock_mod_dir = moddir;
-  resolve_cache_clear();
 
   int r = modprobe_load("cage-mod-resolve");
   ASSERT_EQ(r, -1);
@@ -252,7 +261,7 @@ static void test_modprobe_load_resolve_infrastructure(void)
   mem_free(mod);
   dep_teardown(moddir);
   mem_free(moddir);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -270,14 +279,13 @@ static void test_modprobe_load_resolve_module_missing(void)
   snprintf(dep, sizeof(dep), "../../../../tmp/%s/cage-mod-missing.ko:\n", root + 5);
   ASSERT_EQ(dep_setup(moddir, dep), 0);
   _mock_mod_dir = moddir;
-  resolve_cache_clear();
 
   int r = modprobe_load("cage-mod-missing");
   ASSERT_EQ(r, -1);
 
   dep_teardown(moddir);
   mem_free(moddir);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -335,7 +343,7 @@ static void test_modprobe_load_triggers_cache_invalidation(void)
   char *builtin_file = mem_path(builtin_rel, "modules.builtin");
   io_touch(builtin_file);
   _mock_builtin_prefix = builtin_root;
-  modprobe_cache_clear_builtin();
+  modprobe_cache_invalidate();
   _mock_build_prefix = builtin_root;
 
   char *moddir = mem_path(root, "mods");
@@ -344,7 +352,6 @@ static void test_modprobe_load_triggers_cache_invalidation(void)
   snprintf(dep, sizeof(dep), "../../../../tmp/%s/cage-cache-mod.ko.gz:\n", root + 5);
   ASSERT_EQ(dep_setup(moddir, dep), 0);
   _mock_mod_dir = moddir;
-  resolve_cache_clear();
 
   char *mod = mem_path(root, "cage-cache-mod.ko.gz");
   write_gz(mod, not_a_real_module_gz, NOT_A_REAL_MODULE_GZ_LEN);
@@ -355,15 +362,15 @@ static void test_modprobe_load_triggers_cache_invalidation(void)
   io_unlink(mod);
   mem_free(mod);
   _mock_builtin_prefix = NULL;
-  modprobe_cache_clear_builtin();
+  modprobe_cache_invalidate();
   _mock_build_prefix = NULL;
   dep_teardown(moddir);
   mem_free(moddir);
   io_unlink(builtin_file);
   mem_free(builtin_file);
-  io_rmdir(builtin_rel);
+  io_rmtree(builtin_rel);
   mem_free(builtin_root);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -409,7 +416,7 @@ static void test_pipe_to_fd_success(void)
   ASSERT_STR_EQ(buf, "piped data test");
   close(fd);
   mem_free(tmp);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -431,7 +438,7 @@ static void test_pipe_to_fd_empty(void)
   ASSERT_EQ(read(fd, buf, sizeof(buf)), 0);
   close(fd);
   mem_free(tmp);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -474,7 +481,7 @@ static void test_pipe_to_fd_bad_fd(void)
   fclose(f);
   io_unlink(tmp);
   mem_free(tmp);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -490,7 +497,7 @@ static void test_load_module_path_compressed_happy(void)
   ASSERT_EQ(load_module_path(path), 0);
   ASSERT_EQ(_mock_finit_module_count, 1);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -507,7 +514,7 @@ static void test_load_module_path_compressed_fallback(void)
   ASSERT_EQ(load_module_path(path), -1);
   ASSERT_EQ(_mock_finit_module_count, 2);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -523,7 +530,7 @@ static void test_load_decompressed_gzip_success(void)
   ASSERT_EQ(load_decompressed(path, 1), 0);
   ASSERT_EQ(_mock_finit_module_count, 1);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -539,7 +546,7 @@ static void test_load_decompressed_gzip_fail_finit(void)
   ASSERT_EQ(load_decompressed(path, 1), -1);
   ASSERT_EQ(_mock_finit_module_count, 1);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -551,7 +558,7 @@ static void test_load_decompressed_missing_file(void)
   mock_sys_reset();
   ASSERT_EQ(load_decompressed(path, 1), -1);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -568,7 +575,7 @@ static void test_load_module_path_compressed_finit_err(void)
   ASSERT_EQ(load_module_path(path), -1);
   ASSERT_EQ(_mock_finit_module_count, 1);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -594,7 +601,7 @@ static void test_load_module_path_xz_fallback(void)
   ASSERT_EQ(load_module_path(path), -1);
   ASSERT_EQ(_mock_finit_module_count, 1);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -615,7 +622,7 @@ static void test_load_module_path_xz_no_shell(void)
   mem_free(path);
   mem_free(name);
   mem_free(sentinel);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -632,7 +639,7 @@ static void test_load_module_path_zstd_fallback(void)
   ASSERT_EQ(load_module_path(path), -1);
   ASSERT_EQ(_mock_finit_module_count, 1);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -653,7 +660,7 @@ static void test_modprobe_load_numeric_suffix(void)
   ASSERT_EQ(scan_modules(proc, "xt_MASQUERADE"), 1);
   ASSERT_EQ(scan_modules(proc, "nf_conntrack_netlink"), 1);
   mem_free(proc);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -705,7 +712,7 @@ static void test_scan_modules_file_not_found(void)
   char *path = mem_path(root, "scan-nonexistent");
   ASSERT_EQ(scan_modules(path, "overlay"), -1);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -721,7 +728,7 @@ static void test_scan_modules_found_in_file(void)
   fclose(f);
   ASSERT_EQ(scan_modules(path, "overlay"), 1);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -738,7 +745,7 @@ static void test_scan_modules_found_builtin(void)
   ASSERT_EQ(scan_modules(path, "overlay"), 1);
   ASSERT_EQ(scan_modules(path, "veth"), 1);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -754,38 +761,38 @@ static void test_scan_modules_not_found(void)
   fclose(f);
   ASSERT_EQ(scan_modules(path, "overlay"), 0);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
 static void test_detect_compression_gzip(void)
 {
   const unsigned char gzip[] = { 0x1F, 0x8B, 0x08, 0x00 };
-  ASSERT_EQ(decompress_magic(gzip), 1);
+  ASSERT_EQ(decompress_magic(gzip, sizeof(gzip)), 1);
 }
 
 static void test_detect_compression_xz(void)
 {
   static const unsigned char xz[] = { 0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00 };
-  ASSERT_EQ(decompress_magic(xz), 2);
+  ASSERT_EQ(decompress_magic(xz, sizeof(xz)), 2);
 }
 
 static void test_detect_compression_zstd(void)
 {
   static const unsigned char zstd[] = { 0x28, 0xB5, 0x2F, 0xFD };
-  ASSERT_EQ(decompress_magic(zstd), 3);
+  ASSERT_EQ(decompress_magic(zstd, sizeof(zstd)), 3);
 }
 
 static void test_detect_compression_uncompressed(void)
 {
   const unsigned char plain[] = { 0x7F, 0x45, 0x4C, 0x46 };
-  ASSERT_EQ(decompress_magic(plain), 0);
+  ASSERT_EQ(decompress_magic(plain, sizeof(plain)), 0);
 }
 
 static void test_detect_compression_too_short(void)
 {
   const unsigned char shortbuf[] = { 0x1F };
-  ASSERT_EQ(decompress_magic(shortbuf), 0);
+  ASSERT_EQ(decompress_magic(shortbuf, sizeof(shortbuf)), 0);
 }
 
 static void test_load_module_fd_bad_fd(void)
@@ -808,7 +815,7 @@ static void test_open_module_success(void)
   ASSERT_NE(fd, -1);
   close(fd);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -821,7 +828,7 @@ static void test_open_module_fail(void)
   ASSERT_EQ(open_module(path, &fd), -1);
   ASSERT_EQ(fd, 999);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -888,7 +895,7 @@ static void test_decompress_module_nonexistent(void)
   int fd;
   ASSERT_EQ(open_module(path, &fd), -1);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -900,15 +907,29 @@ static void test_load_module_path_nonexistent(void)
   mock_sys_reset();
   ASSERT_EQ(load_module_path(path), -1);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
-static void test_check_module_status_in_system(void)
+static void test_check_module_status(void)
 {
+  modprobe_cache_invalidate();
   mock_sys_reset();
-  int r = check_module_status("overlay");
-  ASSERT_EQ(r, 1);
+
+  _mock_proc_modules = "overlay 16384 0 - Live 0x0000000000000000\n";
+  _mock_builtin_modules = "";
+  ASSERT_EQ(check_module_status("overlay"), 1);
+
+  modprobe_cache_invalidate();
+  _mock_proc_modules = "";
+  _mock_builtin_modules = "kernel/fs/overlayfs/overlay.ko\n";
+  ASSERT_EQ(check_module_status("overlay"), 1);
+
+  modprobe_cache_invalidate();
+  _mock_builtin_modules = "kernel/fs/ext4/ext4.ko\n";
+  ASSERT_EQ(check_module_status("overlay"), 0);
+
+  modprobe_cache_invalidate();
 }
 
 static void test_scan_modules_not_found_in_file(void)
@@ -923,13 +944,13 @@ static void test_scan_modules_not_found_in_file(void)
   fclose(f);
   ASSERT_EQ(scan_modules(path, "overlay"), 0);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
 static void test_load_dep_nonexistent(void)
 {
-  load_dep("does_not_exist");
+  ASSERT_EQ(load_dep("does_not_exist"), -1);
 }
 
 static void test_scan_modules_with_path_in_file(void)
@@ -944,7 +965,7 @@ static void test_scan_modules_with_path_in_file(void)
   fclose(f);
   ASSERT_EQ(scan_modules(path, "aes"), 1);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -952,7 +973,7 @@ static void test_load_module_fd_ok(void)
 {
   mock_sys_reset();
   _mock_finit_module_ret = 0;
-  int fd = open("/dev/null", O_RDONLY);
+  int fd = memfd_create("test", 0);
   ASSERT_NE(fd, -1);
   ASSERT_EQ(finit_module_fd(fd, 0), 0);
   ASSERT_EQ(_mock_finit_module_count, 1);
@@ -971,7 +992,7 @@ static void test_load_module_path_success(void)
   ASSERT_EQ(load_module_path(path), 0);
   ASSERT_EQ(_mock_finit_module_count, 1);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -989,7 +1010,7 @@ static void test_name_matches_dash(void)
   ASSERT_EQ(scan_modules(path, "test_module"), 1);
   io_unlink(path);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -1006,7 +1027,7 @@ static void test_load_module_path_uncompressed_finit_fail(void)
   ASSERT_EQ(load_module_path(path), -1);
   ASSERT_EQ(_mock_finit_module_count, 1);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -1022,7 +1043,7 @@ static void test_scan_modules_no_newline_not_found(void)
   fclose(f);
   ASSERT_EQ(scan_modules(path, "overlay"), 0);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -1075,7 +1096,7 @@ SUITE(modprobe)
   RUN_TEST(write_temp_module_large);
   RUN_TEST(decompress_module_nonexistent);
   RUN_TEST(load_module_path_nonexistent);
-  RUN_TEST(check_module_status_in_system);
+  RUN_TEST(check_module_status);
   RUN_TEST(scan_modules_not_found_in_file);
   RUN_TEST(scan_modules_with_path_in_file);
   RUN_TEST(load_dep_nonexistent);

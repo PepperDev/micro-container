@@ -710,7 +710,7 @@ static void test_open_and_read_nonexistent(void)
   char *path = mem_path(root, "nonexistent");
   ASSERT_EQ(open_and_read(path, &out), -1);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
   buf_free(&out);
 }
@@ -735,7 +735,7 @@ static void test_open_and_read_ok(void)
   buf_free(&out);
 
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -761,7 +761,7 @@ static void test_open_and_read_large(void)
   buf_free(&out);
 
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 

@@ -5,6 +5,6 @@
 // cppcheck-suppress missingIncludeSystem
 #include <sys/types.h>
 
-int spawn_cage(cage_config_t * cfg, uid_t ruid);
+int spawn_cage(const cage_config_t * cfg, uid_t ruid);
 
 #endif

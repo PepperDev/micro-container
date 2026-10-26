@@ -56,11 +56,10 @@ static void dep_teardown(void)
   snprintf(path, sizeof(path), "%s/%s/modules.dep", test_moddir_root, uts.release);
   io_unlink(path);
   snprintf(path, sizeof(path), "%s/%s", test_moddir_root, uts.release);
-  io_rmdir(path);
-  io_rmdir(test_moddir_root);
+  io_rmtree(path);
+  io_rmtree(test_moddir_root);
   test_moddir_root = NULL;
   _mock_mod_dir = NULL;
-  resolve_cache_clear();
 }
 
 static void test_resolve_nonexistent(void)
@@ -86,7 +85,6 @@ static void test_resolve_with_deps(void)
 {
   dep_teardown();
   _mock_mod_dir = get_moddir();
-  resolve_cache_clear();
   ASSERT_EQ(dep_setup("kernel/fs/ext4.ko: kernel/fs/mbcache.ko kernel/fs/jbd2.ko\n"), 0);
 
   char *path = NULL;
@@ -118,7 +116,6 @@ static void test_resolve_no_deps(void)
 {
   dep_teardown();
   _mock_mod_dir = get_moddir();
-  resolve_cache_clear();
   ASSERT_EQ(dep_setup("kernel/fs/overlay.ko:\n"), 0);
 
   char *path = NULL;
@@ -145,7 +142,6 @@ static void test_resolve_not_found_with_dep(void)
 {
   dep_teardown();
   _mock_mod_dir = get_moddir();
-  resolve_cache_clear();
   ASSERT_EQ(dep_setup("kernel/fs/ext4.ko: kernel/fs/mbcache.ko\n"), 0);
 
   char *path = NULL;
@@ -162,7 +158,6 @@ static void test_resolve_multiple_lines(void)
 {
   dep_teardown();
   _mock_mod_dir = get_moddir();
-  resolve_cache_clear();
   ASSERT_EQ(dep_setup("kernel/fs/ext4.ko: kernel/fs/mbcache.ko kernel/fs/jbd2.ko\n"
                       "kernel/fs/overlay.ko:\n" "kernel/fs/vfscow.ko: kernel/fs/mbcache.ko\n"), 0);
 
@@ -219,7 +214,6 @@ static void test_resolve_no_colon_last_line(void)
 {
   dep_teardown();
   _mock_mod_dir = get_moddir();
-  resolve_cache_clear();
   ASSERT_EQ(dep_setup("kernel/fs/ext4.ko: kernel/fs/jbd2.ko\nno_colon"), 0);
 
   char *path = NULL;
@@ -236,7 +230,6 @@ static void test_resolve_empty_mod_path(void)
 {
   dep_teardown();
   _mock_mod_dir = get_moddir();
-  resolve_cache_clear();
   ASSERT_EQ(dep_setup(": extra\n"), 0);
 
   char *path = NULL;
@@ -252,7 +245,6 @@ static void test_resolve_dep_not_ko(void)
 {
   dep_teardown();
   _mock_mod_dir = get_moddir();
-  resolve_cache_clear();
   ASSERT_EQ(dep_setup("kernel/fs/ext4.ko: kernel/fs/mbcache\n"), 0);
 
   char *path = NULL;
@@ -271,7 +263,6 @@ static void test_resolve_trailing_whitespace(void)
 {
   dep_teardown();
   _mock_mod_dir = get_moddir();
-  resolve_cache_clear();
   ASSERT_EQ(dep_setup("kernel/fs/ext4.ko: kernel/fs/jbd2.ko   "), 0);
 
   char *path = NULL;
@@ -292,7 +283,6 @@ static void test_resolve_gz_suffix(void)
 {
   dep_teardown();
   _mock_mod_dir = get_moddir();
-  resolve_cache_clear();
   ASSERT_EQ(dep_setup("kernel/fs/ext4.ko.gz:\n"), 0);
   char *path = NULL;
   char **deps = NULL;
@@ -308,7 +298,6 @@ static void test_resolve_zst_suffix(void)
 {
   dep_teardown();
   _mock_mod_dir = get_moddir();
-  resolve_cache_clear();
   ASSERT_EQ(dep_setup("kernel/fs/ext4.ko.zst:\n"), 0);
   char *path = NULL;
   char **deps = NULL;
@@ -324,7 +313,6 @@ static void test_resolve_name_no_match(void)
 {
   dep_teardown();
   _mock_mod_dir = get_moddir();
-  resolve_cache_clear();
   ASSERT_EQ(dep_setup("kernel/fs/ext4.ko:\n"), 0);
   char *path = NULL;
   char **deps = NULL;
@@ -338,7 +326,6 @@ static void test_resolve_short_dep(void)
 {
   dep_teardown();
   _mock_mod_dir = get_moddir();
-  resolve_cache_clear();
   ASSERT_EQ(dep_setup("kernel/fs/ext4.ko: a\n"), 0);
   char *path = NULL;
   char **deps = NULL;
@@ -355,7 +342,6 @@ static void test_resolve_invalid_suffix(void)
 {
   dep_teardown();
   _mock_mod_dir = get_moddir();
-  resolve_cache_clear();
   ASSERT_EQ(dep_setup("kernel/fs/ext4.ko: kernel/fs/jbd2.ko.xyy kernel/fs/jbd2.ko.wxyz kernel/fs/jbd2.ko.a\n"), 0);
   char *path = NULL;
   char **deps = NULL;

@@ -61,7 +61,7 @@ Violations: committing code without approval, coding before the user says to, or
 
 ## perform loop
 
-To enter loop mode the prompt is exactly `perform loop`, nothing more.
+To enter loop mode the prompt is exactly `perform loop`, nothing more. If the human gives along the perform loop request a restriction about which tasks or sections to tackle, respect only tackling the tasks the human asked for; only if no limit is given tackle all tasks in the tracker.
 
 During context compaction, make sure to keep in the context if agent is currently on loop mode or not.
 
@@ -72,6 +72,7 @@ When entering loop mode follow the steps:
 - Add multi level source directories (only main at src/, remaining grouped in meaningful subdirectories, e.g. src/module/code.c), moving files to group related responsibilities (SOLID).
 - Each iteration, try to reduce or avoid lizard exceptions by reorganising or refactoring the code.
 - Apply the Definition of Done. Delete the finished task's entry from TODO.md in the same commit — completed tasks are removed, never ticked and left behind, so no separate TODO housekeeping pass is needed.
+- Before each commit the build must succeed and full quality gate must be met, following the same compliance as CONTRIBUTING.md.
 - Commit once per task (one task, one commit). Squash related changes into a single logical commit.
 - Loop back until the user interrupts. For relevant missing critical technical details or blockers (e.g. a required system tool or permission), query the user. Do not query the user to decide the next task — pick the most relevant one and proceed.
 
@@ -356,3 +357,30 @@ for d in /sys/fs/cgroup/cage-*; do [ -d "$d" ] || continue; \
   not root-owned or not setuid (chown root + setuid), without sudo.
 - **Expected spec behaviours**: env precedence/overrides, colon group parsing,
   implicit re-entry, `-k` teardown, GUI socket bind-mounts, volume mapping.
+
+## perform trace audit
+
+To enter trace audit mode the prompt is exactly `perform trace audit`.
+
+### Syscall & I/O audit (trace-based)
+1. Run `CAGE_E2E_STRACE=1 CAGE_E2E_SKIP_BUILD=1 sh e2e/_all.sh` (assumes binary already built and container provisioned). When strace is enabled, all cage invocations run as root (setuid is bypassed by strace), so some e2e results may be invalidated by this limitation.
+2. Audit files in `/tmp/cage-e2e/strace/` for syscall redundancy:
+   - Any syscall for a given resource can happen only once unless it is expected to change (e.g. reading user credentials before and after init script run). Remove or consolidate duplicates: repeated `stat`, `access`, `open` to the same resource, repeated `chown`, `chmod`, `mkdir`, `chdir`, other I/O operations to the same resource multiple times. Repeated `getresuid`, `getpid` to a known previous fetched value (in case of fork, child identity is known from call result; parent should call once and reuse/cascade via parameters/shared context, not globals). Redundant `setresuid`, `unshare`, `setns`, capability/permission changes, redundant `mount`, `fork`, `chroot`, etc.
+   - When redundancy exists due to conditional flow, choose the minimum-impact sequence. Example: if goal is to check/create `/a/b`, prefer `stat` on `/a/b` first; if it exists, `/a` exists and need not be created. Only if missing, fall back to checking/creating `/a`.
+   - **Deduplicate syscalls in the same tick/path**: same `open`, `read`, `ioctl`, `socket`, `sendmsg`, `recvmsg`, `poll`, `glob`, `access`, `stat` appearing twice for identical inputs must be consolidated. `ioctl(SIOCGIFNAME/SIOCGIFINDEX)` pairs and netlink dumps (`RTM_GETROUTE/RTM_GETLINK/RTM_GETADDR`) must be sent at most once per execution path and parsed data shared.
+   - **ENOENT caching**: any `access()`, `open()`, `stat()` that returns `ENOENT` must be cached via a presence flag; the same file must not be probed again in subsequent operations in the same flow. For hot-pluggable discovery (e.g. directories that may change), re-probe only on change detection, not unconditionally.
+   - **Time/id reuse**: `getpid/getppid/getresuid/getresgid/getuid/getgid` results must be fetched once and cascaded; avoid repeated calls. Child identity known from `fork`/`clone` result should not be re-fetched.
+
+### Code-based audit (stdlib/computation/structure)
+3. Audit source code (`src/`, headers) for violations not visible via strace:
+   - **Deduplicate operations**: any libc call (`strlen`, `strcmp`, `memcmp`, `snprintf`, `sscanf`) on identical inputs repeated; parse results cached; computed values (paths, strings, thresholds) reused.
+   - **Big O / computation**: avoid O(n²) over same dataset; do single pass. Remove redundant formatting/computation.
+   - **Fatal errors must cascade by return**: no `exit()`, `_exit()` outside async-signal-safe handler (`_exit(128+sig)` only), and signal handler must only set flag/defer.
+   - **No global/static shared variables**: pass via args/context; only `static const` immutable tables allowed.
+   - **Avoid magic numbers**: use `sizeof`, stdlib constants.
+   - **Prefer bounded buffers with incremental scanning**: don't guess large stack buffers for proc/sys; scan in chunks or allocate bounded/dynamic with cleanup.
+   - **Signal handler async-signal-safe**: only async-signal-safe ops/deferred cleanup.
+   - **Avoid duplication / eliminate dead production code / remove dead unit tests**: as per project rules.
+
+### Output
+4. Create tasks in the task tracker (TODO.md) to fix violations, grouped by domain or business logic where the changed files are few per item. Include file/line references, exact violation, and concrete fix. Do not fix or change code.

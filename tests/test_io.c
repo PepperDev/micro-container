@@ -45,7 +45,7 @@ static void test_truncate_sparse_file(void)
   ASSERT_EQ(stat(path, &st), 0);
   ASSERT_EQ(st.st_size, 10485760);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -59,7 +59,7 @@ static void test_truncate_zero_size(void)
   ASSERT_EQ(stat(path, &st), 0);
   ASSERT_EQ(st.st_size, 0);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -72,7 +72,7 @@ static void test_blankhead_empty_file(void)
   close(fd);
   ASSERT_EQ(io_blankhead(path), 0);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -87,7 +87,7 @@ static void test_blankhead_nonzero_content(void)
   close(fd);
   ASSERT_EQ(io_blankhead(path), 1);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -99,38 +99,7 @@ static void test_blankhead_larger_zeros(void)
   ASSERT_EQ(io_truncate(path, 10485760), 0);
   ASSERT_EQ(io_blankhead(path), 0);
   mem_free(path);
-  test_rmtree(root);
-  mem_free(root);
-}
-
-static int io_samefs(const char *a, const char *b)
-{
-  struct stat sa, sb;
-  if (stat(a, &sa) != 0 || stat(b, &sb) != 0) {
-    fprintf(stderr, "cage: unable to stat for same-fs check\n");
-    return -1;
-  }
-  return sa.st_dev == sb.st_dev ? 1 : 0;
-}
-
-static void test_samefs_same_file(void)
-{
-  ASSERT_EQ(io_samefs("/", "/"), 1);
-}
-
-static void test_samefs_different_paths(void)
-{
-  ASSERT_EQ(io_samefs("/", "/tmp"), 1);
-}
-
-static void test_samefs_missing(void)
-{
-  char *root = test_temp_root();
-  ASSERT_NOT_NULL(root);
-  char *path = mem_path(root, "nonexistent-xyz");
-  ASSERT_EQ(io_samefs(path, "/tmp"), -1);
-  mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -141,7 +110,7 @@ static void test_exists_missing(void)
   char *path = mem_path(root, "nonexistent");
   ASSERT_EQ(io_exists(path), 1);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -153,7 +122,7 @@ static void test_exists_existing(void)
   io_touch(path);
   ASSERT_EQ(io_exists(path), 0);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -170,7 +139,7 @@ static void test_isdir_file(void)
   io_touch(path);
   ASSERT_EQ(io_isdir(path), 1);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -181,7 +150,7 @@ static void test_isdir_missing(void)
   char *path = mem_path(root, "nonexistent-dir");
   ASSERT_EQ(io_isdir(path), -1);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -193,7 +162,7 @@ static void test_islink_file(void)
   io_touch(path);
   ASSERT_EQ(io_islink(path), 1);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -208,7 +177,7 @@ static void test_islink_symlink(void)
   ASSERT_EQ(io_islink(link), 0);
   mem_free(target);
   mem_free(link);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -219,7 +188,7 @@ static void test_islink_missing(void)
   char *path = mem_path(root, "nonexistent-link");
   ASSERT_EQ(io_islink(path), 2);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -236,7 +205,7 @@ static void test_symlink_basic(void)
   ASSERT_NE(S_ISLNK(st.st_mode), 0);
   mem_free(target);
   mem_free(link);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -248,7 +217,7 @@ static void test_symlink_existing(void)
   io_touch(path);
   ASSERT_EQ(io_symlink("/some/target", path), -1);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -260,7 +229,7 @@ static void test_mkdir_simple(void)
   ASSERT_EQ(io_mkdir(path), 0);
   ASSERT_EQ(io_isdir(path), 0);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -272,7 +241,7 @@ static void test_mkdir_existing(void)
   ASSERT_EQ(io_mkdir(path), 0);
   ASSERT_EQ(io_mkdir(path), 0);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -284,7 +253,25 @@ static void test_mkdir_nested(void)
   ASSERT_EQ(io_mkdir(path), 0);
   ASSERT_EQ(io_isdir(path), 0);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
+  mem_free(root);
+}
+
+static void test_mkdir_own_after_missing_cache(void)
+{
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+  char *a = mem_path(root, "a");
+  char *b = mem_path(root, "a/b");
+  char *c = mem_path(root, "a/b/c");
+  ASSERT_EQ(io_exists(b), 1);
+  ASSERT_EQ(io_mkdir_own(b, 0, 0, 0755), 0);
+  ASSERT_EQ(io_mkdir_own(c, 0, 0, 0755), 0);
+  ASSERT_EQ(io_isdir(c), 0);
+  mem_free(c);
+  mem_free(b);
+  mem_free(a);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -296,7 +283,7 @@ static void test_mkdtmp_normal(void)
   ASSERT_EQ(io_mkdtmp(path, 0), 0);
   ASSERT_EQ(io_isdir(path), 0);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -308,7 +295,7 @@ static void test_mkdtmp_sticky(void)
   ASSERT_EQ(io_mkdtmp(path, 1), 0);
   ASSERT_EQ(io_isdir(path), 0);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -321,7 +308,7 @@ static void test_touch_create(void)
   struct stat st;
   ASSERT_EQ(stat(path, &st), 0);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -333,7 +320,7 @@ static void test_touch_existing(void)
   io_touch(path);
   ASSERT_EQ(io_touch(path), 0);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -353,7 +340,41 @@ static void test_read_small(void)
   ASSERT_EQ(strlen(b.data), 5);
   buf_free(&b);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
+  mem_free(root);
+}
+
+static void test_read_cap_exact(void)
+{
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+  char *path = mem_path(root, "read-cap");
+  int fd = open(path, O_WRONLY | O_CREAT | O_CLOEXEC, 0644);
+  write(fd, "hello", 5);
+  close(fd);
+  buf_t b = BUF_INIT;
+  ASSERT_EQ(io_read_cap(path, &b, 5), 0);
+  ASSERT_EQ(b.len, 5);
+  ASSERT_EQ(memcmp(b.data, "hello", 5), 0);
+  buf_free(&b);
+  mem_free(path);
+  io_rmtree(root);
+  mem_free(root);
+}
+
+static void test_read_cap_exceeded(void)
+{
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+  char *path = mem_path(root, "read-cap-fail");
+  int fd = open(path, O_WRONLY | O_CREAT | O_CLOEXEC, 0644);
+  write(fd, "hello", 6);
+  close(fd);
+  buf_t b = BUF_INIT;
+  ASSERT_EQ(io_read_cap(path, &b, 5), -1);
+  buf_free(&b);
+  mem_free(path);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -366,7 +387,7 @@ static void test_unlink_existing(void)
   ASSERT_EQ(io_unlink(path), 0);
   ASSERT_EQ(io_exists(path), 1);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -377,7 +398,7 @@ static void test_unlink_missing(void)
   char *path = mem_path(root, "unlink-missing");
   ASSERT_EQ(io_unlink(path), -1);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -389,43 +410,7 @@ static void test_unlink_dir(void)
   ASSERT_EQ(io_mkdir(path), 0);
   ASSERT_EQ(io_unlink(path), -1);
   mem_free(path);
-  test_rmtree(root);
-  mem_free(root);
-}
-
-static void test_rmdir_existing(void)
-{
-  char *root = test_temp_root();
-  ASSERT_NOT_NULL(root);
-  char *path = mem_path(root, "rmdir-existing");
-  ASSERT_EQ(io_mkdir(path), 0);
-  ASSERT_EQ(io_rmdir(path), 0);
-  ASSERT_EQ(io_exists(path), 1);
-  mem_free(path);
-  test_rmtree(root);
-  mem_free(root);
-}
-
-static void test_rmdir_missing(void)
-{
-  char *root = test_temp_root();
-  ASSERT_NOT_NULL(root);
-  char *path = mem_path(root, "rmdir-missing");
-  ASSERT_EQ(io_rmdir(path), -1);
-  mem_free(path);
-  test_rmtree(root);
-  mem_free(root);
-}
-
-static void test_rmdir_file(void)
-{
-  char *root = test_temp_root();
-  ASSERT_NOT_NULL(root);
-  char *path = mem_path(root, "rmdir-file");
-  io_touch(path);
-  ASSERT_EQ(io_rmdir(path), -1);
-  mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -441,43 +426,44 @@ static void test_rmtree_dir(void)
   ASSERT_EQ(io_exists(a), 1);
   mem_free(b);
   mem_free(a);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
 static void test_chown_file(void)
 {
-  char *root = test_temp_root();
-  ASSERT_NOT_NULL(root);
-  char *path = mem_path(root, "chown-file");
-  io_touch(path);
-  int r = io_chown(path, getuid(), getgid());
-  ASSERT(r == 0 || r == -1);
-  mem_free(path);
-  test_rmtree(root);
-  mem_free(root);
+  mock_sys_reset();
+  _mock_chown_ret = 0;
+  _mock_chown_count = 0;
+  ASSERT_EQ(io_chown("/tmp/cage-chown-file", 123, 456), 0);
+  ASSERT_EQ(_mock_chown_count, 1);
+  _mock_chown_ret = 1;
+  ASSERT_EQ(io_chown("/tmp/cage-chown-file", 123, 456), -1);
+  ASSERT_EQ(_mock_chown_count, 2);
 }
 
 static void test_chown_nop(void)
 {
+  mock_sys_reset();
   char *root = test_temp_root();
   ASSERT_NOT_NULL(root);
   char *path = mem_path(root, "chown-nop");
   io_touch(path);
   ASSERT_EQ(io_chown(path, -1, -1), 0);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
 static void test_chown_missing(void)
 {
+  mock_sys_reset();
   char *root = test_temp_root();
   ASSERT_NOT_NULL(root);
   char *path = mem_path(root, "chown-missing");
   ASSERT_EQ(io_chown(path, 0, 0), -1);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -499,32 +485,7 @@ static void test_umask_effect(void)
   ASSERT_EQ(st.st_mode & 0777, 0600);
   io_umask(old);
   mem_free(path);
-  test_rmtree(root);
-  mem_free(root);
-}
-
-static void test_umask_restore(void)
-{
-  mode_t original = umask(0);
-  umask(original);
-  mode_t before = umask(0);
-  umask(before);
-  io_umask(0077);
-  mode_t after = umask(0);
-  umask(after);
-  ASSERT_EQ(after, 0077);
-  io_umask(before);
-}
-
-static void test_samefs_second_fails(void)
-{
-  char *root = test_temp_root();
-  ASSERT_NOT_NULL(root);
-  char *path = mem_path(root, "samefs-a");
-  io_touch(path);
-  ASSERT_EQ(io_samefs(path, "/dev/null/foo"), -1);
-  mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -535,7 +496,7 @@ static void test_blankhead_open_fail(void)
   char *path = mem_path(root, "nonexistent-blank");
   ASSERT_EQ(io_blankhead(path), -1);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -556,7 +517,7 @@ static void test_mkdir_io_exists_error(void)
   ASSERT_EQ(io_mkdir(child), -1);
   mem_free(path);
   mem_free(child);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -570,7 +531,7 @@ static void test_islink_notdir(void)
   ASSERT_EQ(io_islink(child), -1);
   mem_free(path);
   mem_free(child);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -584,7 +545,7 @@ static void test_isdir_notdir(void)
   ASSERT_EQ(io_isdir(child), -1);
   mem_free(path);
   mem_free(child);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -596,7 +557,7 @@ static void test_mkdir_exists_as_file(void)
   io_touch(path);
   ASSERT_EQ(io_mkdir(path), -1);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -622,7 +583,7 @@ static void test_mkdir_vs_io_mkdir(void)
   mem_free(ab);
   mem_free(cd);
   mem_free(e);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -639,7 +600,7 @@ static void test_read_empty(void)
   ASSERT_EQ(b.data[0], '\0');
   buf_free(&b);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -661,7 +622,7 @@ static void test_read_large(void)
   buf_free(&b);
   free(data);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -674,7 +635,7 @@ static void test_read_fail(void)
   ASSERT_EQ(io_read(path, &b), -1);
   buf_free(&b);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -699,7 +660,7 @@ static void test_mkdir_own_at_nested(void)
   mem_free(p);
 
   close(rfd);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -717,7 +678,7 @@ static void test_mkdir_own_at_chowns_every_component(void)
   ASSERT_EQ(_mock_fchownat_count, 3);
 
   close(rfd);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -741,7 +702,7 @@ static void test_mkdir_parents_at_chowns_only_leaf(void)
   mem_free(p);
 
   close(rfd);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -761,7 +722,7 @@ static void test_touch_at_creates_file(void)
   mem_free(p);
 
   close(rfd);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -786,7 +747,7 @@ static void test_mkdir_own_at_rejects_symlink(void)
   close(rfd);
   mem_free(link);
   mem_free(outside);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -811,7 +772,7 @@ static void test_touch_at_rejects_symlink(void)
   close(rfd);
   mem_free(link);
   mem_free(outside);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -831,7 +792,7 @@ static void test_touch_at_rejects_symlink_leaf(void)
   close(rfd);
   mem_free(link);
   mem_free(outside);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -843,10 +804,6 @@ SUITE(io)
   RUN_TEST(blankhead_nonzero_content);
   RUN_TEST(blankhead_larger_zeros);
   RUN_TEST(blankhead_open_fail);
-  RUN_TEST(samefs_same_file);
-  RUN_TEST(samefs_different_paths);
-  RUN_TEST(samefs_missing);
-  RUN_TEST(samefs_second_fails);
   RUN_TEST(exists_missing);
   RUN_TEST(exists_existing);
   RUN_TEST(isdir_dir);
@@ -862,6 +819,7 @@ SUITE(io)
   RUN_TEST(mkdir_simple);
   RUN_TEST(mkdir_existing);
   RUN_TEST(mkdir_nested);
+  RUN_TEST(mkdir_own_after_missing_cache);
   RUN_TEST(mkdir_exists_as_file);
   RUN_TEST(mkdir_vs_io_mkdir);
   RUN_TEST(mkdtmp_normal);
@@ -871,21 +829,19 @@ SUITE(io)
   RUN_TEST(read_small);
   RUN_TEST(read_empty);
   RUN_TEST(read_large);
+  RUN_TEST(read_cap_exact);
+  RUN_TEST(read_cap_exceeded);
   RUN_TEST(read_fail);
   RUN_TEST(read_readdir_fails);
   RUN_TEST(mkdir_io_exists_error);
   RUN_TEST(unlink_existing);
   RUN_TEST(unlink_missing);
   RUN_TEST(unlink_dir);
-  RUN_TEST(rmdir_existing);
-  RUN_TEST(rmdir_missing);
-  RUN_TEST(rmdir_file);
   RUN_TEST(rmtree_dir);
   RUN_TEST(chown_file);
   RUN_TEST(chown_nop);
   RUN_TEST(chown_missing);
   RUN_TEST(umask_effect);
-  RUN_TEST(umask_restore);
   RUN_TEST(mkdir_own_at_nested);
   RUN_TEST(mkdir_own_at_chowns_every_component);
   RUN_TEST(mkdir_parents_at_chowns_only_leaf);

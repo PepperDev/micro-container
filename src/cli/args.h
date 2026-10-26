@@ -3,6 +3,7 @@
 
 // cppcheck-suppress missingIncludeSystem
 #include <stddef.h>
+#include "sandbox/vol.h"
 
 #define CAGE_MAX_ENVVARS 256
 #define CAGE_MAX_VOLUMES 256
@@ -23,11 +24,11 @@ typedef struct {
   int unshare_net;
   char *name;
   char *pidfile;
-  char *inst_env;
   char *upperdir;
   char *user;
   int show_version;
   char *volumes[CAGE_MAX_VOLUMES];
+  vol_t volumes_parsed[CAGE_MAX_VOLUMES];
   size_t volume_count;
   char *workdir;
   int has_dashdash;

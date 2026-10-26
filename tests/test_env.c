@@ -145,12 +145,6 @@ static void test_lang_from_environment(void)
 
 static void test_gui_envs_with_x11(void)
 {
-  int created = 0;
-  if (access("/tmp/.X11-unix", F_OK) != 0) {
-    if (mkdir("/tmp/.X11-unix", 0755) == 0)
-      created = 1;
-  }
-
   setenv("XDG_RUNTIME_DIR", "/run/user/1000", 1);
   setenv("HOME", "/home/test", 1);
   unsetenv("DISPLAY");
@@ -162,8 +156,6 @@ static void test_gui_envs_with_x11(void)
   ASSERT_NOT_NULL(d);
   ASSERT_STR_EQ(d, ":0.0");
 
-  if (created)
-    rmdir("/tmp/.X11-unix");
   env_map_free(&e.map);
   mem_free(e.host_xdg_runtime_dir);
 }
@@ -271,6 +263,7 @@ static void test_gui_envs_xdg_empty_is_unset(void)
 
 static void test_mock_gui_no_envs(void)
 {
+  mock_sys_reset();
   _mock_access_ret = -1;
   char *old_xdg = getenv("XDG_RUNTIME_DIR");
   unsetenv("XDG_RUNTIME_DIR");
@@ -282,7 +275,6 @@ static void test_mock_gui_no_envs(void)
 
   if (old_xdg)
     setenv("XDG_RUNTIME_DIR", old_xdg, 1);
-  _mock_access_ret = 0;
   env_map_free(&e.map);
   mem_free(e.host_xdg_runtime_dir);
 }

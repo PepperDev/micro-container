@@ -1,9 +1,13 @@
 #include "resolve.h"
+#include "mod_util.h"
+#include "mod_format.h"
 #include "util/io.h"
 #include "util/mem.h"
 #include "util/syscall.h"
 // cppcheck-suppress missingIncludeSystem
 #include <ctype.h>
+// cppcheck-suppress missingIncludeSystem
+#include <stdio.h>
 // cppcheck-suppress missingIncludeSystem
 #include <string.h>
 // cppcheck-suppress missingIncludeSystem
@@ -28,35 +32,14 @@ static int parse_dep_line(const char *line, size_t len, struct dep_line *d)
   return 0;
 }
 
-static const char *skip_to_name(const char *start, const char *end)
-{
-  const char *s = start;
-  for (const char *q = start; q < end; q++) {
-    if (*q == '/')
-      s = q + 1;
-  }
-  return s;
-}
-
-static int valid_ko_suffix(const char *s, size_t after)
-{
-  if (after == 0)
-    return 1;
-  if (after == 3)
-    return memcmp(s, ".gz", 3) == 0 || memcmp(s, ".xz", 3) == 0;
-  if (after == 4)
-    return memcmp(s, ".zst", 4) == 0;
-  return 0;
-}
-
 static int name_matches(const char *name, const char *s, size_t slen)
 {
   size_t nlen = strlen(name);
   if (slen < nlen + 3 || memcmp(s + nlen, ".ko", 3) != 0)
     return 0;
-  if (memcmp(s, name, nlen) != 0)
+  if (!module_name_eq(name, s, nlen))
     return 0;
-  return valid_ko_suffix(s + nlen + 3, slen - nlen - 3);
+  return mod_format_suffix_ok(s + nlen + 3, slen - nlen - 3);
 }
 
 static int find_in_deps(const char *line, size_t len, const char *name)
@@ -118,7 +101,7 @@ static int try_add_dep(const char *start, const char *end, char ***deps, int *nd
     ko_at--;
   if (ko_at < 3)
     return 0;
-  if (!valid_ko_suffix(start + ko_at, ssz - ko_at))
+  if (!mod_format_suffix_ok(start + ko_at, ssz - ko_at))
     return 0;
   const char *sl = skip_to_name(start, start + ko_at - 3);
   size_t slen = (start + ko_at - 3) - sl;
@@ -149,17 +132,12 @@ static int extract_deps(const char *str, size_t len, char ***out_deps, int *out_
 }
 
 static buf_t cached_deps = BUF_INIT;
-
-// cppcheck-suppress unusedFunction
-void resolve_cache_clear(void)
-{
-  buf_free(&cached_deps);
-}
+static char cached_deps_path[4160];
 
 // cppcheck-suppress staticFunction
 const char *__resolve_mod_dir(void)
 {
-  return "/lib/modules";
+  return MODULES_BASE;
 }
 
 weak_alias(__resolve_mod_dir, resolve_mod_dir);
@@ -167,47 +145,44 @@ weak_alias(__resolve_mod_dir, resolve_mod_dir);
 // cppcheck-suppress staticFunction
 const char *__resolve_build_prefix(void)
 {
-  return "/lib/modules";
+  return MODULES_BASE;
 }
 
 weak_alias(__resolve_build_prefix, resolve_build_prefix);
+
+static int cache_matches(const char *path)
+{
+  return cached_deps.data != NULL && strcmp(cached_deps_path, path) == 0;
+}
+
+static int load_deps_file(const char *path)
+{
+  buf_free(&cached_deps);
+  if (snprintf(cached_deps_path, sizeof(cached_deps_path), "%s", path) >= (int)sizeof(cached_deps_path))
+    return -1;
+  return io_read(path, &cached_deps);
+}
 
 static const buf_t *read_deps(struct utsname *uts)
 {
   if (uname(uts) != 0)
     return NULL;
-  if (cached_deps.data != NULL)
-    return &cached_deps;
   const char *base = resolve_mod_dir();
-  char *path = mem_cat(base, strlen(base), "/", (size_t)1,
-                       uts->release, strlen(uts->release),
-                       "/modules.dep", strlen("/modules.dep"), MEM_CAT_END);
+  char *path = build_modules_path(base, uts->release, "modules.dep", strlen("modules.dep"));
   if (!path)
     return NULL;
-  if (io_read(path, &cached_deps) != 0) {
-    mem_free(path);
-    return NULL;
-  }
+  int r = cache_matches(path) ? 0 : load_deps_file(path);
   mem_free(path);
-  return &cached_deps;
+  return r == 0 ? &cached_deps : NULL;
 }
 
 static int build_mod_path(const struct dep_line *d, const char *release, char **out)
 {
   const char *base = resolve_build_prefix();
-  char *full = mem_cat(base, strlen(base), "/", 1,
-                       release, strlen(release), "/", 1, MEM_CAT_END);
+  char *full = build_modules_path(base, release, d->mod_path, d->mod_len);
   if (!full)
     return -1;
-  size_t flen = strlen(full);
-  char *tmp = mem_realloc(full, flen + d->mod_len + 1);
-  if (!tmp) {
-    mem_free(full);
-    return -1;
-  }
-  memcpy(tmp + flen, d->mod_path, d->mod_len);
-  tmp[flen + d->mod_len] = '\0';
-  *out = tmp;
+  *out = full;
   return 0;
 }
 

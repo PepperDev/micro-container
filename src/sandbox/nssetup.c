@@ -2,10 +2,10 @@
 #include "mount.h"
 #include "overlay.h"
 #include "setup.h"
-#include "core/proc.h"
-#include "core/prep.h"
+#include "child.h"
 #include "util/io.h"
 #include "util/mem.h"
+#include "user/user.h"
 #include "util/env.h"
 #include "util/syscall.h"
 #include "pkg/modprobe.h"
@@ -30,16 +30,19 @@
 #include <errno.h>
 
 /* cppcheck-suppress staticFunction */
-int ns_setup(const cage_config_t *cfg)
+int ns_setup(void)
 {
-  unsigned long flags = CLONE_NEWPID | (cfg->unshare_cgroup ? CLONE_NEWCGROUP : 0);
+  unsigned long flags = CLONE_NEWPID | CLONE_NEWIPC;
   return sys_unshare(flags) != 0 ? -1 : 0;
 }
 
 /* cppcheck-suppress staticFunction */
-int mount_ns_setup(int root_private)
+int mount_ns_setup(int root_private, int unshare_cgroup, int unshare_net)
 {
-  if (sys_unshare(CLONE_NEWNS) != 0)
+  unsigned long flags = CLONE_NEWNS | (unshare_cgroup ? CLONE_NEWCGROUP : 0);
+  if (unshare_net)
+    flags |= CLONE_NEWNET | CLONE_NEWUTS;
+  if (sys_unshare(flags) != 0)
     return -1;
   if (!root_private && sys_mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL) != 0) {
     fprintf(stderr, "cage: make-private failed\n");
@@ -52,7 +55,7 @@ static void inner_child_net(const struct run_ctx *rc)
 {
   if (rc->net_id < 0)
     return;
-  if (sys_unshare(CLONE_NEWNET) != 0 || do_child_net(rc->net_id, rc->net_futex) < 0)
+  if (do_child_net(rc->net_id, rc->net_futex) < 0)
     _exit(1);
 }
 
@@ -108,10 +111,18 @@ static user_t *do_child_setup(const char *root, const cage_config_t *cfg, const 
   return u;
 }
 
+static int setup_mount_namespaces(const struct prep_result *pr, const cage_config_t *cfg,
+                                  const struct run_ctx *rc, int root_private)
+{
+  if (mount_ns_setup(root_private, cfg->unshare_cgroup, rc->net_id >= 0) != 0)
+    return -1;
+  return prepare_overlay(pr->root, &pr->dirs);
+}
+
 static void run_mount_inner(const struct prep_result *pr, const cage_config_t *cfg, const struct run_ctx *rc,
                             int root_private)
 {
-  if (mount_ns_setup(root_private) != 0 || prepare_overlay(pr->root, &pr->dirs) != 0)
+  if (setup_mount_namespaces(pr, cfg, rc, root_private) != 0)
     _exit(1);
 
   inner_child_net(rc);
@@ -130,7 +141,7 @@ static void run_mount_inner(const struct prep_result *pr, const cage_config_t *c
 static int fork_mount_child(const struct prep_result *pr, const cage_config_t *cfg, const struct run_ctx *rc,
                             int root_private, pid_t *child)
 {
-  pid_t pid = pidfork();
+  pid_t pid = child_fork();
   if (pid < 0)
     return -1;
   if (pid == 0) {
@@ -147,7 +158,7 @@ int prepare_mounts(struct prep_result *pr, const cage_config_t *cfg, const struc
     fprintf(stderr, "cage: mkdtemp failed\n");
     return -1;
   }
-  if (ns_setup(cfg) != 0)
+  if (ns_setup() != 0)
     return -1;
   return fork_mount_child(pr, cfg, rc, root_private, &pr->child);
 }

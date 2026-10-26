@@ -4,6 +4,7 @@
 #include "util/io.h"
 #include "mock.h"
 #include <sys/wait.h>
+#include <errno.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/file.h>
@@ -31,25 +32,10 @@ static int make_pidfile(const char *path, pid_t pid)
   return close_pid(fd);
 }
 
-static int wait_zombie(pid_t pid)
+static int wait_exited(pid_t pid)
 {
-  char path[64], buf[256];
-  snprintf(path, sizeof(path), "/proc/%d/stat", (int)pid);
-  for (int i = 0; i < 2000; i++) {
-    int fd = open(path, O_RDONLY);
-    if (fd < 0)
-      return 1;
-    ssize_t n = read(fd, buf, sizeof(buf) - 1);
-    close(fd);
-    if (n <= 0)
-      return 1;
-    buf[n] = '\0';
-    char *rp = strrchr(buf, ')');
-    if (rp && rp[1] == ' ' && rp[2] == 'Z')
-      return 1;
-    usleep(1000);
-  }
-  return 0;
+  siginfo_t si;
+  return waitid(P_PID, (id_t) pid, &si, WEXITED | WNOWAIT) == 0;
 }
 
 static void test_killpid_nonexistent_pidfile(void)
@@ -59,7 +45,7 @@ static void test_killpid_nonexistent_pidfile(void)
   char *pf = mem_path(root, "nonexistent");
   ASSERT_EQ(killpid(NULL, pf), 0);
   mem_free(pf);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -72,7 +58,7 @@ static void test_killpid_stale_pidfile(void)
   ASSERT_EQ(killpid(NULL, pf), 0);
   ASSERT_EQ(io_exists(pf), 1);
   mem_free(pf);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -91,7 +77,32 @@ static void test_killpid_alive_child(void)
   ASSERT_EQ(io_exists(pf), 1);
   pidwait(child, NULL);
   mem_free(pf);
-  test_rmtree(root);
+  io_rmtree(root);
+  mem_free(root);
+}
+
+static void test_killpid_kill_fails(void)
+{
+  mock_sys_reset();
+  _mock_kill_ret = 1;
+  _mock_kill_errno = EPERM;
+
+  char *root = test_temp_root();
+  ASSERT_NOT_NULL(root);
+  char *pf = mem_path(root, "kill-fail.pid");
+  pid_t child = pidfork();
+  ASSERT_NE(child, -1);
+  if (child == 0) {
+    pause();
+    _exit(0);
+  }
+  ASSERT_EQ(make_pidfile(pf, child), 0);
+  ASSERT_EQ(killpid(NULL, pf), -1);
+  ASSERT_EQ(io_exists(pf), 1);
+  kill(child, SIGKILL);
+  pidwait(child, NULL);
+  mem_free(pf);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -123,7 +134,7 @@ static void test_detect_existing_no_pidfile(void)
   pid_t r = detect_existing("nonexistent", pf);
   ASSERT_EQ(r, 0);
   mem_free(pf);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -137,7 +148,7 @@ static void test_detect_existing_stale(void)
   ASSERT_EQ(r, 0);
   ASSERT_EQ(io_exists(pf), 1);
   mem_free(pf);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -157,12 +168,13 @@ static void test_detect_existing_alive(void)
   kill(child, SIGKILL);
   pidwait(child, NULL);
   mem_free(pf);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
 static void test_detect_existing_zombie(void)
 {
+  mock_sys_reset();
   char *root = test_temp_root();
   ASSERT_NOT_NULL(root);
   char *pf = mem_path(root, "detect-zombie.pid");
@@ -170,19 +182,22 @@ static void test_detect_existing_zombie(void)
   ASSERT_NE(child, -1);
   if (child == 0)
     _exit(0);
-  ASSERT_EQ(wait_zombie(child), 1);
+  ASSERT_EQ(wait_exited(child), 1);
+  _mock_pid_stat = "123 (cage) Z 1 123 123 0 -1\n";
   ASSERT_EQ(make_pidfile(pf, child), 0);
   pid_t r = detect_existing("test", pf);
   ASSERT_EQ(r, 0);
   ASSERT_EQ(io_exists(pf), 1);
   pidwait(child, NULL);
+  _mock_pid_stat = NULL;
   mem_free(pf);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
 static void test_killpid_zombie_target(void)
 {
+  mock_sys_reset();
   char *root = test_temp_root();
   ASSERT_NOT_NULL(root);
   char *pf = mem_path(root, "kill-zombie.pid");
@@ -190,15 +205,17 @@ static void test_killpid_zombie_target(void)
   ASSERT_NE(child, -1);
   if (child == 0)
     _exit(0);
-  ASSERT_EQ(wait_zombie(child), 1);
+  ASSERT_EQ(wait_exited(child), 1);
+  _mock_pid_stat = "123 (cage) Z 1 123 123 0 -1\n";
   ASSERT_EQ(make_pidfile(pf, child), 0);
   time_t t0 = time(NULL);
   ASSERT_EQ(killpid(NULL, pf), 0);
   ASSERT(time(NULL) - t0 <= 3);
   ASSERT_EQ(io_exists(pf), 1);
   pidwait(child, NULL);
+  _mock_pid_stat = NULL;
   mem_free(pf);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -235,7 +252,7 @@ static void test_readpid_success(void)
   ASSERT_EQ(pid, 12345);
   close_pid(rfd);
   mem_free(pf);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -264,7 +281,7 @@ static void test_create_pidfile_success(void)
   ASSERT_NE(fd, -1);
   close_pid(fd);
   mem_free(pf);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -277,7 +294,7 @@ static void test_create_pidfile_existing(void)
   int fd = create_pidfile(pf);
   ASSERT_EQ(fd, -1);
   mem_free(pf);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -297,7 +314,7 @@ static void test_create_pidfile_writes_pid(void)
   close(fd);
   ASSERT_EQ(atoi(buf), getpid());
   mem_free(pf);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -309,7 +326,7 @@ static void test_readpid_open_fails(void)
   pid_t pid = readpid(pf, NULL);
   ASSERT_EQ(pid, -1);
   mem_free(pf);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -321,8 +338,14 @@ static void test_readpid_read_fails(void)
 
 static void test_pidexists_unexpected_errno(void)
 {
-  int r = pidexists(1);
-  ASSERT(r == 0 || r == -1);
+  mock_sys_reset();
+  _mock_kill_ret = 1;
+  _mock_kill_errno = EPERM;
+  ASSERT_EQ(pidexists(1), -1);
+  _mock_kill_errno = ESRCH;
+  ASSERT_EQ(pidexists(1), 1);
+  _mock_kill_ret = 0;
+  ASSERT_EQ(pidexists(1), 0);
 }
 
 static void test_readpid_invalid_content(void)
@@ -337,7 +360,7 @@ static void test_readpid_invalid_content(void)
   pid_t pid = readpid(pf, NULL);
   ASSERT_EQ(pid, -1);
   mem_free(pf);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -352,7 +375,7 @@ static void test_readpid_zero_rejected(void)
 
   ASSERT_EQ(readpid(pf, NULL), -1);
   mem_free(pf);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -367,7 +390,7 @@ static void test_readpid_negative_rejected(void)
 
   ASSERT_EQ(readpid(pf, NULL), -1);
   mem_free(pf);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -382,7 +405,7 @@ static void test_readpid_overflow_rejected(void)
 
   ASSERT_EQ(readpid(pf, NULL), -1);
   mem_free(pf);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -396,7 +419,7 @@ static void test_readpid_no_fd(void)
   pid_t pid = readpid(pf, NULL);
   ASSERT_EQ(pid, 42);
   mem_free(pf);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -424,7 +447,7 @@ static void test_killpid_readpid_invalid(void)
   close(fd);
   ASSERT_EQ(killpid(NULL, pf), -1);
   mem_free(pf);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -438,7 +461,7 @@ static void test_killpid_io_exists_error(void)
   ASSERT_EQ(killpid(NULL, child), -1);
   mem_free(child);
   mem_free(file);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -453,7 +476,7 @@ static void test_detect_existing_io_exists_error(void)
   ASSERT_EQ(r, -1);
   mem_free(child);
   mem_free(file);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -470,7 +493,7 @@ static void test_detect_existing_readpid_fails(void)
   ASSERT_EQ(r, 0);
   ASSERT_EQ(io_exists(pf), 1);
   mem_free(pf);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -499,7 +522,7 @@ static void test_close_pid(void)
   ASSERT_NE(fd, -1);
   ASSERT_EQ(close_pid(fd), 0);
   mem_free(pf);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -534,6 +557,7 @@ SUITE(proc)
   RUN_TEST(killpid_nonexistent_pidfile);
   RUN_TEST(killpid_stale_pidfile);
   RUN_TEST(killpid_alive_child);
+  RUN_TEST(killpid_kill_fails);
   RUN_TEST(join_namespaces_setns_fails);
   RUN_TEST(join_namespaces_success);
   RUN_TEST(detect_existing_no_pidfile);

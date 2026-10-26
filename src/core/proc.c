@@ -1,4 +1,5 @@
 #include "proc.h"
+#include "sandbox/child.h"
 #include "util/io.h"
 #include "util/syscall.h"
 // cppcheck-suppress missingIncludeSystem
@@ -32,10 +33,7 @@
 
 pid_t pidfork(void)
 {
-  pid_t pid = fork();
-  if (pid < 0)
-    fprintf(stderr, "cage: unable to fork process: %s\n", strerror(errno));
-  return pid;
+  return child_fork();
 }
 
 char *compute_pidfile(const char *name, size_t *len)
@@ -147,7 +145,7 @@ int pidwait(pid_t pid, int *status)
   int st;
   int *out = status ? status : &st;
   for (;;) {
-    pid_t r = waitpid(pid, out, 0);
+    pid_t r = sys_waitpid(pid, out, 0);
     if (r >= 0)
       return 0;
     if (errno == EINTR)
@@ -171,7 +169,7 @@ int exit_code_from_status(int status)
 /* cppcheck-suppress staticFunction */
 int pidexists(pid_t pid)
 {
-  if (kill(pid, 0) == 0)
+  if (sys_kill(pid, 0) == 0)
     return 0;
   if (errno == ESRCH)
     return 1;
@@ -209,7 +207,7 @@ static const char *resolve_pidfile(const char *name, const char *pidfile, char *
 
 static int kill_gracefully(pid_t pid)
 {
-  if (kill(pid, SIGTERM) != 0) {
+  if (sys_kill(pid, SIGTERM) != 0) {
     if (errno == ESRCH)
       return 0;
     return -1;
@@ -256,12 +254,20 @@ int join_namespaces(pid_t target)
   return join_ns(target, "mnt");
 }
 
-static int pid_zombie(pid_t pid)
+// cppcheck-suppress staticFunction
+int __read_pid_stat(pid_t pid, buf_t *b)
 {
   char path[64];
-  buf_t b = BUF_INIT;
   snprintf(path, sizeof(path), "/proc/%d/stat", (int)pid);
-  if (io_read_quiet(path, &b) != 0) {
+  return io_read_quiet(path, b);
+}
+
+weak_alias(__read_pid_stat, read_pid_stat);
+
+static int pid_zombie(pid_t pid)
+{
+  buf_t b = BUF_INIT;
+  if (read_pid_stat(pid, &b) != 0) {
     buf_free(&b);
     return 1;
   }
@@ -278,33 +284,39 @@ static int pid_joinable(pid_t pid)
   return pidexists(pid) == 0 && !pid_zombie(pid);
 }
 
+static int stop_target(pid_t pid)
+{
+  if (pid_zombie(pid))
+    return 0;
+  return kill_gracefully(pid);
+}
+
+static int kill_pidfile(const char *pidfile)
+{
+  int fd;
+  pid_t pid = readpid(pidfile, &fd);
+  if (pid < 0)
+    return -1;
+  close_pid(fd);
+  int r = stop_target(pid);
+  io_unlink_quiet(pidfile);
+  return r;
+}
+
 int killpid(const char *name, const char *pidfile)
 {
   char *free_pf = NULL;
+  int rc = -1;
   pidfile = resolve_pidfile(name, pidfile, &free_pf);
-  if (!pidfile)
-    return -1;
-  int r = io_exists(pidfile);
-  if (r == 1) {
-    mem_free(free_pf);
-    return 0;
+  if (pidfile) {
+    int r = io_exists(pidfile);
+    if (r == 1)
+      rc = 0;
+    else if (r == 0)
+      rc = kill_pidfile(pidfile);
   }
-  if (r != 0) {
-    mem_free(free_pf);
-    return -1;
-  }
-  int fd;
-  pid_t pid = readpid(pidfile, &fd);
-  if (pid < 0) {
-    mem_free(free_pf);
-    return -1;
-  }
-  io_unlink_quiet(pidfile);
-  close_pid(fd);
-  if (!pid_zombie(pid))
-    kill_gracefully(pid);
   mem_free(free_pf);
-  return 0;
+  return rc;
 }
 
 pid_t detect_existing(const char *name, const char *pidfile)

@@ -77,9 +77,11 @@ int mount_file_acl(const struct gui_ctx *ctx, const char *target, const char *so
   char *absp = mem_path(ctx->root, target);
   if (!absp)
     return -1;
-  acl_guest_set(absp, ctx->uid, ctx->gid, ctx->groups, ctx->ngroups);
+  int ok = acl_guest_set(absp, ctx->uid, ctx->gid, ctx->groups, ctx->ngroups);
+  if (ok != 0)
+    fprintf(stderr, "cage: ACL on %s failed\n", target);
   mem_free(absp);
-  return 0;
+  return ok;
 }
 
 static char *try_cookie(const char *path)

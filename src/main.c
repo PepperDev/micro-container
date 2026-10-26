@@ -3,6 +3,7 @@
 #include "core/proc.h"
 #include "core/reuse.h"
 #include "core/super.h"
+#include "sandbox/mount.h"
 // cppcheck-suppress missingIncludeSystem
 #include <stdio.h>
 // cppcheck-suppress missingIncludeSystem
@@ -56,6 +57,13 @@ static int check_no_command(const cage_config_t *cfg)
   return 1;
 }
 
+static int prepare_run(cage_config_t *cfg)
+{
+  if (check_no_command(cfg))
+    return -1;
+  return prepare_volumes(cfg);
+}
+
 static int get_ids(uid_t *euid, uid_t *ruid, gid_t *egid, gid_t *rgid)
 {
   uid_t suid;
@@ -91,7 +99,7 @@ int main(int argc, char **argv)
   r = handle_config_exits(&cfg);
   if (r >= 0)
     return r;
-  if (check_no_command(&cfg))
+  if (prepare_run(&cfg) != 0)
     return 1;
   return do_spawn(&cfg, ruid);
 }

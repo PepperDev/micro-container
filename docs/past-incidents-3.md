@@ -561,3 +561,261 @@
   recorded in docs/qa.md §Domain-Specific Pitfalls.
 - **Recurrence likelihood**: Medium — two mkdir helpers with different
   ownership rules are easy to confuse.
+
+### `killpid` swallowed SIGTERM and wait failures
+
+- **Bug**: `cage kill` removed the pidfile and reported success even when
+  `SIGTERM` failed with `EPERM`/`EINVAL` or the graceful wait failed, leaving
+  the sandbox process alive while the caller believed it had stopped.
+- **Root cause**: `killpid` called `kill_gracefully(pid)` for its side effect
+  and discarded the return, then unconditionally returned 0.
+- **Prevention**: `killpid` checks `kill_gracefully` and returns -1 on failure
+  (only `ESRCH` stays success); `kill_gracefully` signals through the mockable
+  `sys_kill` seam and `test_killpid_kill_fails` forces `EPERM`. Pitfall recorded
+  in docs/qa.md §Domain-Specific Pitfalls.
+- **Recurrence likelihood**: Medium — teardown helpers whose errors look
+  harmless are the ones most often called without checking the return.
+
+### `-N` parent hung forever when the child died before the net handshake
+
+- **Bug**: with `-N`, a child that exited before `do_child_net` (unshare,
+  mount or init-script failure) left the parent blocked in
+  `sys_futex_wait(net_futex, 0)` forever, so `cage` never reported the failure.
+- **Root cause**: the parent-side net wait used an untimed futex wait, unlike
+  `wait_root_ready` which polls the child with `waitid(WNOHANG|WNOWAIT)` and a
+  20 ms timeout.
+- **Prevention**: both handshakes share one timed `wait_flag` loop that peeks
+  at the child each iteration and returns on child death; the parent then skips
+  the veth work and `finish_child` reaps the child and reports the status.
+  Pitfall recorded in docs/qa.md §Domain-Specific Pitfalls and the rule in
+  docs/lifecycle.md §Network Namespace Setup.
+- **Recurrence likelihood**: Medium — new cross-process handshakes tend to be
+  written as a bare futex wait.
+
+### Computed pidfile leaked when `create_pidfile` failed
+
+- **Bug**: `spawn_init` allocated `free_pidfile` via `do_early_setup`, then
+  returned on `create_pidfile < 0` without freeing it; `spawn_cage` also
+  returned without freeing it when `spawn_init` failed.
+- **Root cause**: the early-return path bypassed `spawn_cleanup`, and the
+  allocation was not owned by any single cleanup point.
+- **Prevention**: `spawn_st_init` NULLs `pidfile`/`free_pidfile`,
+  `spawn_init` frees and NULLs it before the `create_pidfile` failure return,
+  and `spawn_cage` frees it defensively; `spawn_cleanup` is deliberately not
+  used because it would unlink another instance's pidfile. Pitfall recorded in
+  docs/qa.md §Domain-Specific Pitfalls.
+- **Recurrence likelihood**: Medium — early returns between an allocation and
+  the cleanup block reopen the leak.
+
+### Double free of free_pidfile on spawn failure paths
+
+- **Bug**: `spawn_init` allocated `free_pidfile` via `do_early_setup`, freed
+  it on `create_pidfile` failure before `goto fail` (and `fail` calls
+  `spawn_cleanup` which also freed it), and `spawn_cage` also freed it after
+  `spawn_init` returned failure. A segfault occurred on the error path when
+  custom `-w` outside the derived loopdir triggered a fatal error in
+  samefs setup.
+- **Root cause**: multiple cleanup points (the early-return path, the shared
+  `spawn_cleanup`, and the caller `spawn_cage`) each freed `free_pidfile`
+  without nulling or coordinating ownership. Any failure path between
+  allocation and full ownership transfer risked double frees.
+- **Prevention**: `spawn_cleanup` now NULLs `free_pidfile` and
+  `env.host_xdg_runtime_dir` after freeing; `spawn_init` NULLs `free_pidfile`
+  on the `create_pidfile` error path; callers avoid double-free by treating
+  ownership as transferred to the cleanup path. Pitfall recorded in
+  docs/qa.md §Domain-Specific Pitfalls.
+- **Recurrence likelihood**: Medium — early returns between allocation and
+  shared cleanup blocks commonly reintroduce double frees in complex
+  teardown flows.
+
+
+### `io_rmtree` could recurse into a truncated child path
+
+- **Bug**: a directory entry whose `"%s/%s"` child path did not fit the
+  4096-byte stack buffer was silently truncated, and `io_rmtree` recursed
+  into the truncated path — potentially deleting a different entry — while
+  ignoring recursive failures.
+- **Root cause**: `rmtree_dir` used `snprintf` without checking the result and
+  `io_rmtree` discarded the recursion return value.
+- **Prevention**: `rmtree_dir` detects truncation, reports it and returns -1;
+  `io_rmtree` propagates that failure before `rmdir`. Pitfall recorded in
+  docs/qa.md §Domain-Specific Pitfalls.
+- **Recurrence likelihood**: Medium — path-joining `snprintf` calls in
+  recursive walks are easy to leave unchecked.
+
+### Failed ACL grant on a GUI socket was silently ignored
+
+- **Bug**: `mount_file_acl` returned 0 after `acl_guest_set` failed, so a
+  bind-mounted X11/Pulse socket stayed inaccessible to the guest while cage
+  reported a successful GUI setup.
+- **Root cause**: `acl_guest_set` was called for its side effect and its return
+  value was discarded.
+- **Prevention**: `mount_file_acl` propagates the ACL result and logs the
+  target; `mount_file_acl_propagates_failure` forces `sys_setxattr` failure and
+  asserts -1. Pitfall recorded in docs/qa.md §Domain-Specific Pitfalls.
+- **Recurrence likelihood**: Medium — ACL/chown grants get treated as
+  best-effort even when the guest depends on them.
+
+### Interrupted ext4 image build was reused as if complete
+
+- **Bug**: if cage was killed while writing `${loopdir}.img`, the next run saw
+  `EEXIST`, accepted the truncated image and tried to mount it, failing with an
+  unrelated loopback error.
+- **Root cause**: the image was written in place and creation treated
+  `EEXIST` as success without validating the existing file.
+- **Prevention**: `build_ext4_img` creates `${img}.tmp.<pid>` and renames it
+  into place; `setup_ext4_img` reuses an existing image only when
+  `ext4_image_valid()` confirms the exact size and ext4 superblock magic, and
+  otherwise rebuilds it. `test_ext4_image_valid` covers valid, missing and
+  truncated images. Pitfall recorded in docs/qa.md §Domain-Specific Pitfalls
+  and the flow in docs/lifecycle.md §Samefs / Ext4 Loopback Flow.
+- **Recurrence likelihood**: Medium — in-place artifact creation with
+  `EEXIST`-as-success recurs whenever a persistent cache is added.
+
+### Double free of free_pidfile on spawn failure paths
+
+- **Bug**: `spawn_init` allocated `free_pidfile` via `do_early_setup`, freed
+  it on `create_pidfile` failure before `goto fail` (and `fail` calls
+  `spawn_cleanup` which also freed it), and `spawn_cage` also freed it after
+  `spawn_init` returned failure. A segfault occurred on the error path when
+  custom `-w` outside the derived loopdir triggered a fatal error in
+  samefs setup.
+- **Root cause**: multiple cleanup points (the early-return path, the shared
+  `spawn_cleanup`, and the caller `spawn_cage`) each freed `free_pidfile`
+  without nulling or coordinating ownership. Any failure path between
+  allocation and full ownership transfer risked double frees.
+- **Prevention**: `spawn_cleanup` now NULLs `free_pidfile` and
+  `env.host_xdg_runtime_dir` after freeing; `spawn_init` NULLs `free_pidfile`
+  on the `create_pidfile` error path; callers avoid double-free by treating
+  ownership as transferred to the cleanup path. Pitfall recorded in
+  docs/qa.md §Domain-Specific Pitfalls.
+- **Recurrence likelihood**: Medium — early returns between allocation and
+  shared cleanup blocks commonly reintroduce double frees in complex
+  teardown flows.
+
+### -N veth IDs were never reused after a session exited
+
+- **Bug**: with `-N`, parallel sessions got sequential veth IDs (rp0=0,
+  rp1=1), but after killing rp0 the next session rp2 received id 2 instead of
+  reusing id 0, so its sandbox IP skipped the freed `/31` block. The
+  `e2e/network.sh` "reuse freed ID after parallel" check failed.
+- **Root cause**: `netlink_alloc_veth_id` took the maximum existing
+  `cage-vethN` and returned `max + 1`; it never looked for gaps below the
+  maximum, so a freed low ID was unreachable.
+- **Prevention**: `netlink_lowest_free_veth_id` records every existing ID in a
+  bitmap and returns the lowest free index (fails when all
+  `CAGE_VETH_MAX_ID + 1` slots are occupied). Unit tests cover a gap
+  (`veth0`+`veth2` → 1), a non-matching prefix, and full exhaustion; the e2e
+  reuse case verifies rp2 takes rp0's address. Pitfall recorded in
+  docs/qa.md §Domain-Specific Pitfalls.
+- **Recurrence likelihood**: Medium — extending past the maximum is the
+  obvious allocator implementation, and gaps are invisible until churn.
+
+### Pidfile removed before the target process was confirmed dead
+
+- **Bug**: `cage -k` unlinked the pidfile before waiting for the sandbox to
+  exit, so `e2e_wait_session_gone` saw the pidfile disappear while the old
+  netns (and its veth) was still alive. In the `-N` reuse e2e a new session
+  could then pick a different veth ID, and a concurrent allocation could reuse
+  an ID still held by the dying session.
+- **Root cause**: `kill_pidfile` called `io_unlink_quiet` before
+  `stop_target`, making pidfile absence mean "kill started", not "process
+  gone".
+- **Prevention**: `kill_pidfile` now closes the locked fd, stops/waits for the
+  process, and only then unlinks the pidfile. The e2e also waits for
+  `cage-veth*` links to drain before the reuse assertions. Pitfall recorded in
+  docs/qa.md §Domain-Specific Pitfalls.
+- **Recurrence likelihood**: Medium — bookkeeping is commonly removed before
+  the potentially slow shutdown completes.
+
+### GUI setup failed after creating a nested XDG directory
+
+- **Bug**: `-G` sessions with a default PulseAudio socket failed with
+  `cage: GUI setup failed` (pulse e2e, acl pulse check). `io_mkdir_own()`
+  creates missing parents through `mkdir_chown()`, but that helper never
+  invalidated the `io_exists()` cache. The parent was cached as missing during
+  the pre-create probe, so creating `.../run/user/1000/pulse` re-checked
+  `.../run/user/1000`, saw the stale "missing", and called `mkdir()` again,
+  which failed with `EEXIST`.
+- **Root cause**: create helpers mutated the filesystem without invalidating the
+  per-process existence cache; only `io_mkdir`/`io_touch`/`io_unlink` did.
+- **Prevention**: `mkdir_chown`, `io_mkdtmp` and `io_symlink` now invalidate the
+  created path. Added `test_mkdir_own_after_missing_cache` in `tests/test_io.c`
+  and recorded the pitfall in docs/qa.md §Domain-Specific Pitfalls.
+- **Recurrence likelihood**: High — any new create helper must pair with cache
+  invalidation, and the failure only appears with nested creation.
+
+### cgroup namespace unshared before fork leaked cage-<pid> on every -C run
+
+- **Bug**: `e2e/cgroup.sh` found `/sys/fs/cgroup/cage-<pid>` after each `-C`
+  run, one more per run. Cleanup also wrote the PID back into
+  `cage-<pid>/cgroup.procs` (a no-op) instead of the parent cgroup.
+- **Root cause**: the parent unshared `CLONE_NEWCGROUP` in `ns_setup()`, so its
+  cgroup namespace root became `cage-<pid>`; `${path}/cage-<pid>` was no longer
+  visible and cleanup early-returned. The earlier cleanup fix had also changed
+  the `cgroup.procs` path from `root` to `cgdir`.
+- **Prevention**: `CLONE_NEWCGROUP` is now folded into the child's single
+  `CLONE_NEWNS` unshare before cgroupfs is mounted, so the parent stays in the
+  host cgroup namespace. Cleanup writes the parent PID to
+  `${root}/cgroup.procs` again. Unit tests assert the PID lands in the parent
+  `cgroup.procs` and a nested `cage-parent` is removed; e2e cgroup leak check
+  passes. Pitfall recorded in docs/qa.md §Domain-Specific Pitfalls.
+- **Recurrence likelihood**: Medium — namespace ownership across the fork is
+  easy to move to the wrong side, and cgroupfs then hides the cleanup target.
+
+### -N broke the host's IPv6 connectivity
+
+- **Bug**: after `cage -N` the host lost its router-learned IPv6 default
+  routes (evidence `.tmp/ip6/before` vs `.tmp/ip6/after`): the `default via
+  fe80::...` entries vanished while the on-link `/64` routes remained, so
+  host IPv6 egress stopped until the next unsolicited RA.
+- **Root cause**: cage enabled IPv6 forwarding with
+  `conf/all/forwarding=1`. That calls `rt6_purge_dflt_routers()`, which
+  deletes RA-learned default routes on every interface whose
+  `accept_ra != 2`. The `all/accept_ra` writes added alongside did not
+  propagate to existing interfaces, so the purge removed the host routes.
+- **Prevention**: enable forwarding through the per-interface
+  `force_forwarding` knob (`all` + `default`), which leaves `cnf.forwarding`
+  and RA processing untouched. On kernels without `force_forwarding`, raise
+  `accept_ra` to 2 on every interface before enabling global forwarding and
+  abort if any raise fails. `e2e/network.sh` now asserts `-N` leaves
+  `all/forwarding=0` and sets both force_forwarding knobs; pitfall recorded in
+  docs/qa.md §Domain-Specific Pitfalls.
+- **Recurrence likelihood**: High — kernel forwarding semantics are
+  non-obvious and a global `all/forwarding` write looks like the natural fix.
+
+### same_fs flake: fixed sleep and stacked tmpfs mount
+
+- **Bug**: in full-suite runs `e2e/same_fs.sh` intermittently failed three of
+  its four checks ("same-fs loopback message", "ext4 loop mounted mid-run",
+  "appdir relocated onto the loopback") with an empty `/tmp/d1.log`, while the
+  same suite passed standalone and on repeat.
+- **Root cause**: the test waited a fixed 2s for asynchronous setup, so under
+  load cage had not reached the same-fs path before the log, mount and appdir
+  were inspected. A single `umount /var/lib/cage` also leaves a hidden tmpfs
+  layer behind if the fixture ever stacks; the same-fs condition then never
+  triggers (two tmpfs entries were observed after a failure) and cleanup's
+  unconditional mount adds yet another layer, poisoning later runs.
+- **Prevention**: poll up to 10s for `/var/lib/cage-loop/app-d1` instead of
+  sleeping; unmount every `/var/lib/cage` layer in a loop and fail fast if the
+  path stays mounted; unmount before restoring the tmpfs. Full
+  `e2e/_all.sh` passes with `same_fs` 4/0. Pitfall recorded in docs/qa.md
+  §Domain-Specific Pitfalls.
+- **Recurrence likelihood**: Medium — fixed sleeps and single-layer unmounts
+  look correct until the suite runs under load or after an interrupted run.
+
+### unprivileged no-sudo path segfaulted instead of failing cleanly
+
+- **Bug**: `e2e/unprivileged.sh` failed four checks. With cage not setuid and
+  sudo absent, an unprivileged run exited 139 (SIGSEGV) instead of rc 1, so
+  stderr was empty and the expected `sudo` hint never appeared. The sudo
+  repair case also returned 127.
+- **Root cause**: `try_sudo_reexec()` used `vfork()`. Its child closed stdio,
+  failed `execlp("sudo", ...)`, and called `_exit(127)`; on resume the parent
+  jumped into corrupted startup code and segfaulted before printing the
+  failure. The static-PIE musl build made the shared-stack failure visible.
+- **Prevention**: the sudo child now uses `sys_fork()`; the parent reliably
+  reports `cage: sudo --fix failed`. `e2e/unprivileged.sh` passes 8/0, and the
+  pitfall is recorded in docs/qa.md §Domain-Specific Pitfalls.
+- **Recurrence likelihood**: Medium — vfork looks like the natural optimization
+  before exec, and mocked unit tests do not exercise exec failure.

@@ -53,21 +53,11 @@ static void test_net_setup_nat_recv_fails(void)
   ASSERT_EQ(net_setup_nat(), -1);
 }
 
-static void test_net_enable_ip_forward_prod_path(void)
-{
-  mock_sys_reset();
-  _mock_net_ip_forward_ret = -1;
-  int r = net_enable_ip_forward();
-  ASSERT(r == 0 || r == -1);
-}
-
 static void test_netfilter_open_real_call(void)
 {
   int fd;
-  int r = netfilter_open(&fd);
-  ASSERT(r == 0 || r == -1);
-  if (r == 0)
-    close(fd);
+  ASSERT_EQ(netfilter_open(&fd), 0);
+  close(fd);
 }
 
 static void test_net_setup_nat_ack_non_error(void)
@@ -115,14 +105,6 @@ static void test_net_enable_ip6_forward(void)
   ASSERT_EQ(net_enable_ip6_forward(), 0);
 }
 
-static void test_net_enable_ip6_forward_prod_path(void)
-{
-  mock_sys_reset();
-  _mock_net_ip6_forward_ret = -1;
-  int r = net_enable_ip6_forward();
-  ASSERT(r == 0 || r == -1);
-}
-
 static void test_net_setup_nat6_opens_socket(void)
 {
   mock_sys_reset();
@@ -159,14 +141,12 @@ SUITE(net)
   RUN_TEST(net_setup_nat_netfilter_open_fails);
   RUN_TEST(net_setup_child_recv_dump_fails);
   RUN_TEST(net_setup_nat_recv_fails);
-  RUN_TEST(net_enable_ip_forward_prod_path);
   RUN_TEST(netfilter_open_real_call);
   RUN_TEST(net_setup_nat_ack_non_error);
   RUN_TEST(net_setup_nat_eexist_is_ok);
   RUN_TEST(net_setup_nat_other_error_fails);
   RUN_TEST(net6_addr);
   RUN_TEST(net_enable_ip6_forward);
-  RUN_TEST(net_enable_ip6_forward_prod_path);
   RUN_TEST(net_setup_nat6_opens_socket);
   RUN_TEST(net_setup_nat6_netfilter_open_fails);
   RUN_TEST(net_setup_nat6_recv_fails);

@@ -21,6 +21,8 @@
 // cppcheck-suppress missingIncludeSystem
 #include <sys/stat.h>
 
+#define RESOLV_MAX (64 * 1024)
+
 static int val_is_local_ip4(const char *v, size_t n)
 {
   return n >= 4 && strncmp(v, "127.", 4) == 0;
@@ -80,7 +82,7 @@ int has_real_ns_in_content(const char *p)
 int __needs_default_dns(void)
 {
   buf_t b = BUF_INIT;
-  if (io_read("/etc/resolv.conf", &b) != 0)
+  if (io_read_cap("/etc/resolv.conf", &b, RESOLV_MAX) != 0)
     return 1;
   int r = !has_real_ns_in_content(b.data);
   buf_free(&b);
@@ -96,43 +98,21 @@ static int setup_resolv_write_dns(int fd)
   return write(fd, c, (size_t)len) == len ? 0 : -1;
 }
 
-static int write_resolv_to_fd(const char *src)
-{
-  int fd = open(src, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
-  if (fd < 0)
-    return -1;
-  int r = setup_resolv_write_dns(fd);
-  close(fd);
-  return r;
-}
-
-static int setup_resolv_tmpfs(const char *target)
+static int setup_resolv_file_bind(const char *target)
 {
   char tmp[] = "/tmp/cage-dns-XXXXXX";
-  if (!mkdtemp(tmp))
+  int fd = mkstemp(tmp);
+  if (fd < 0)
     return -1;
-  if (sys_mount("tmpfs", tmp, "tmpfs", 0, "size=1m")) {
-    rmdir(tmp);
+  int ok = fchmod(fd, 0644) == 0 && setup_resolv_write_dns(fd) == 0;
+  if (close(fd) != 0)
+    ok = 0;
+  if (!ok || sys_mount(tmp, target, NULL, MS_BIND, NULL) != 0) {
+    unlink(tmp);
     return -1;
   }
-  char *src = mem_path(tmp, "resolv.conf");
-  if (!src)
-    goto cleanup;
-  if (write_resolv_to_fd(src))
-    goto cleanup;
-  if (sys_mount(src, target, NULL, MS_BIND, NULL))
-    goto cleanup;
-  io_unlink(src);
-  mem_free(src);
-  sys_umount(tmp);
-  rmdir(tmp);
+  unlink(tmp);
   return 0;
-
- cleanup:
-  mem_free(src);
-  sys_umount(tmp);
-  rmdir(tmp);
-  return -1;
 }
 
 static int setup_resolv_bind(const char *path)
@@ -161,7 +141,7 @@ static int handle_nonreg_resolv(const char *resolv)
 static int resolv_has_content(const char *resolv)
 {
   buf_t b = BUF_INIT;
-  if (io_read(resolv, &b) != 0) {
+  if (io_read_cap(resolv, &b, RESOLV_MAX) != 0) {
     buf_free(&b);
     return -1;
   }
@@ -217,7 +197,7 @@ static int check_or_create_resolv(const char *resolv, const cage_config_t *cfg)
 static int do_resolv_replace(const char *resolv, const cage_config_t *cfg)
 {
   if (cfg->unshare_net && needs_default_dns())
-    return setup_resolv_tmpfs(resolv);
+    return setup_resolv_file_bind(resolv);
   return setup_resolv_bind(resolv);
 }
 

@@ -48,6 +48,7 @@ Before merging any change, verify these generic C items:
 - **Buffer bounds**: every `memcpy`/`snprintf`/`strncpy` uses the destination buffer size; no `strcpy`, `sprintf`, `gets`
 - **Endianness**: network byte-order fields converted with `htonl`/`htons`/`ntohl`/`ntohs` as appropriate; avoid double-conversion (e.g. `s_addr` from `recvfrom` is already NBO)
 - **File descriptor leaks**: every `open`/`socket`/`accept` has a paired `close` on all error paths
+- **Double-free / NULL-after-free**: on error paths with multiple cleanup sites (early returns, shared cleanup, caller), NULL pointers after `free` and ensure exactly one owner frees each heap pointer
 - **Signal safety**: only async-signal-safe functions (see `signal-safety(7)`) called from signal handlers — typically just `write()` to a self-pipe
 - **EINTR**: all blocking syscalls (`poll`, `recvfrom`, `sendto`, `accept`) wrapped in a loop that retries on `EINTR`
 - **Decode safety**: reject invalid characters in Base32/Base64/Hex input; validate output buffer length before writing
@@ -168,6 +169,58 @@ if (io_exists(cgdir) != 0)
 Review every `io_exists`/`io_isdir` call site for the three-valued contract;
 `!= 1` is almost always a bug, and `-1` must be handled separately. Prefer
 naming the comparison (e.g. `int e = io_exists(p); if (e == 1) return;`).
+
+### io_exists cache: invalidate after every successful create
+
+`io_exists()` caches `access()` results per process. A create helper that skips
+invalidation leaves the path cached as "missing", so the next `io_mkdir_own()`
+on a child path sees its newly created parent as missing and calls `mkdir()`
+again, failing with `EEXIST`.
+
+Common mistakes:
+- Raw `mkdir()` success followed by `chown()` without invalidating the path
+  (`mkdir_chown` in `src/util/io.c` did this)
+- `io_mkdtmp()` and `io_symlink()` not invalidating after creating
+- Relying on the *caller* to invalidate: callers that create several nested
+  dirs then reuse them will still see stale entries
+
+When adding a create/mutate helper, check:
+- Does every successful create (dir, file, symlink) call
+  `io_cache_invalidate(path)` before returning?
+- Does failure after a successful `mkdir()` (e.g. `chown` failing) also
+  invalidate the now-existing path?
+
+Correct pattern:
+```c
+if (mkdir(path, mode) != 0)
+  return -1;
+io_cache_invalidate(path);   // creation invalidates the cached "missing"
+if (owner_must_change && sys_chown(path, uid, gid) != 0)
+  return -1;
+```
+
+### Cgroup cleanup: parent must stay in the host cgroup namespace
+
+With `-C`, only the container child unshares `CLONE_NEWCGROUP`, folded into its
+existing `unshare(CLONE_NEWNS)` call (one unshare, before mounting cgroupfs).
+If the **parent** unshares it, the cgroup namespace root becomes `cage-<pid>`;
+the parent can no longer see `${path}/cage-<pid>`, and cleanup early-returns,
+leaking the cgroup and its `cage-parent` child on every run.
+
+Common mistakes:
+- Adding `CLONE_NEWCGROUP` to the parent's `unshare()` in `ns_setup()`
+- Writing the parent PID to `cage-<pid>/cgroup.procs` (a no-op) instead of the
+  parent cgroup's `${path}/cgroup.procs`, which is what moves the parent out
+  before `cgroup_rmdir_recursive()`
+- Unsharing the cgroup namespace after mounting cgroupfs in the child
+
+When touching cgroup namespaces or cleanup, check:
+- Is `CLONE_NEWCGROUP` folded into the child's `CLONE_NEWNS` unshare, before
+  `mount cgroups` (no extra `unshare()` call)?
+- Does cleanup write `pid` to `${root}/cgroup.procs` (root = `/sys/fs/cgroup`),
+  not to the target sub-cgroup?
+- Does the unit test assert the PID was written to the parent `cgroup.procs`
+  and that a nested `cage-parent` directory is removed?
 
 ### Loop device: hold the setup fd across mount with LO_FLAGS_AUTOCLEAR
 
@@ -363,6 +416,20 @@ dprintf(st->pidfd, "%d", st->child);   // child PID, not getpid()
 close_pid(st->pidfd);
 st->pidfd = -1;
 ```
+
+### pidfile: unlink only after the process is confirmed gone
+
+- **Risk**: `kill_pidfile` removed the pidfile before sending the signal and
+  waiting. Other code (and e2e scripts) use pidfile absence as "session is
+  gone", so a concurrent `-N` run could allocate the still-live session's veth
+  ID, and `e2e_wait_session_gone` returned while the old netns still held its
+  veth (`rp2` skipped the just-freed ID).
+- **Prevention**: close the locked fd, call `stop_target(pid)` (which waits for
+  `pidexists` to report the process gone) and only then `io_unlink_quiet`.
+  Covered by `test_killpid_*` and `e2e/network.sh`'s reuse check, which also
+  drains `cage-veth*` links before asserting IDs.
+- **Recurrence likelihood**: Medium — "remove bookkeeping first, then kill" is
+  a natural cleanup order, and the race only shows with concurrent runs.
 
 ### pidfile re-read: passing PID directly instead of re-reading
 
@@ -1464,6 +1531,53 @@ cgroup_cleanup(st->cg_pid, st->cg_fs_type);
 - **Recurrence likelihood**: Medium — the arithmetic looks innocuous and the
   failure only appears as a runtime reachability error.
 
+### Veth IDs must reuse the lowest freed slot, not extend past the maximum
+
+- **Risk**: `netlink_alloc_veth_id` (src/net/veth.c) scanned existing
+  `cage-vethN` links and returned `max + 1`. When a middle session exited its
+  veth disappeared, leaving a hole, but the next allocation still grew the
+  maximum. With hosts `/31`-addressed per ID, freed addresses were never
+  reused: after rp0 (id 0) and rp1 (id 1), killing rp0 made rp2 take id 2
+  instead of id 0.
+- **Prevention**: scan every existing ID into a `used[]` bitmap indexed by
+  `CAGE_VETH_MAX_ID` and return the lowest zero bit
+  (`netlink_lowest_free_veth_id`), failing only when all slots are used.
+  Covered by `test_lowest_free_veth_id_crafted`,
+  `test_lowest_free_veth_id_empty`, `test_lowest_free_veth_id_exhausted` and
+  `e2e/network.sh`'s "reuse freed ID after parallel" case.
+- **Recurrence likelihood**: Medium — "next after the maximum" is the natural
+  shortcut for unique-ID allocation; holes only surface under churn.
+
+### IPv6 forwarding: use force_forwarding, never all/forwarding on the host
+
+`-N` needs IPv6 forwarding, but `/proc/sys/net/ipv6/conf/all/forwarding=1`
+makes the kernel purge every RA-learned default route whose interface has
+`accept_ra != 2` (`rt6_purge_dflt_routers`), so the host loses its SLAAC
+default routes and IPv6 connectivity.
+
+Use the per-interface `force_forwarding` knob instead: write
+`conf/all/force_forwarding=1` for existing interfaces and
+`conf/default/force_forwarding=1` for interfaces created later (the veth).
+`force_forwarding` makes `ip6_forward` accept packets on that input interface
+without flipping `cnf.forwarding`, so RA processing keeps working.
+
+Common mistakes:
+- Writing `conf/all/accept_ra=2` "to fix RA": `all/accept_ra` does not
+  propagate to existing interfaces; RA routes are still purged.
+- Writing `all/forwarding=1` and then trying to restore routes: the purge is
+  immediate and the next unsolicited RA may be minutes away.
+- Forgetting `default/force_forwarding`: the host side works, but the newly
+  created `cage-vethN` has no forwarding and container traffic is dropped.
+
+On kernels without `force_forwarding` (< 6.17), raise `accept_ra` to 2 on
+every existing interface (individually; `all/accept_ra` does not propagate)
+*before* writing `all/forwarding=1`. The purge skips `accept_ra == 2`, so RA
+default routes survive. Abort the forwarding write if any per-interface raise
+fails — a partial raise can still purge routes on the missed interface.
+
+`e2e/network.sh` asserts `all/forwarding` stays 0 and both force_forwarding
+knobs become 1 after a `-N` session (6.17+ path).
+
 ### Set-but-empty environment variables must be treated as unset
 
 - **Risk**: `getenv()` returns `""` (non-NULL) for a variable that is set to
@@ -1868,6 +1982,134 @@ cgroup_cleanup(st->cg_pid, st->cg_fs_type);
   pc12.
 - **Recurrence likelihood**: Medium — two mkdir helpers with different
   ownership rules invite a swap.
+
+### Discarded teardown return reports a failed kill as success
+
+- **Risk**: `killpid` called `kill_gracefully(pid)` but discarded its return, so
+  a failed `SIGTERM` (`EPERM`, `EINVAL`) or a failed wait after an already
+  removed pidfile still reported success to the CLI — the caller believed the
+  sandbox was gone while its process survived.
+- **Prevention**: propagate the result and treat only `ESRCH` as success; send
+  the signal through `sys_kill` so the failure path can be mocked. Covered by
+  `test_killpid_kill_fails` in `tests/test_proc.c`.
+- **Recurrence likelihood**: Medium — teardown helpers whose errors look
+  harmless are the ones most often called without checking the return.
+
+### Shared-memory handshakes must not wait forever on a dead child
+
+- **Risk**: the `-N` parent waited on the child's "net-ready" futex with a
+  plain `sys_futex_wait`, which has no timeout. A child that exited before
+  `do_child_net` (unshare, mount, or init-script failure) never woke it, so the
+  parent hung permanently instead of reporting the failure. The temp-root
+  handshake had already been converted to a timed loop; the net handshake had
+  not.
+- **Prevention**: `wait_flag` is the single timed wait (20 ms) used by both
+  handshakes; each iteration peeks at the child with
+  `waitid(WEXITED | WNOHANG | WNOWAIT)` and returns on child death. See
+  docs/lifecycle.md §Network Namespace Setup rule 8.
+- **Recurrence likelihood**: Medium — newly added cross-process futex
+  handshakes tend to start as a bare wait.
+
+### Free everything allocated before an early-return setup path
+
+- **Risk**: `spawn_init` returned straight to the caller when
+  `create_pidfile` failed, after `do_early_setup` had already allocated
+  `free_pidfile`; `spawn_cage` had the same leak on its failure return. The
+  failure path is rare, so the leak accumulates only across repeated failed
+  launches, making it easy to miss.
+- **Prevention**: `spawn_st_init` zeroes every owned pointer, `spawn_init`
+  frees `free_pidfile` (and NULLs it) before its bare `return -1`, and
+  `spawn_cage` frees it again defensively (NULL-safe). Do not route these
+  paths through `spawn_cleanup`, which would unlink a pidfile that may belong
+  to another instance.
+- **Recurrence likelihood**: Medium — each new early return between an
+  allocation and the normal cleanup block reopens the leak.
+
+### Check `snprintf` when building a child path for recursive deletion
+
+- **Risk**: `io_rmtree` formatted `"%s/%s"` into a fixed 4096-byte buffer
+  without checking the result. A truncated child path points at a different
+  entry (or a prefix that happens to exist), so recursive deletion could
+  remove the wrong subtree instead of failing on an over-long name.
+- **Prevention**: `rmtree_dir` checks `snprintf` and reports `path too long`,
+  skips that entry, and returns -1; `io_rmtree` propagates the failure without
+  attempting `rmdir` on a directory that still has children. Recursion also
+  propagates per-child failures instead of silently continuing.
+- **Recurrence likelihood**: Medium — every path-joining `snprintf` in a
+  recursive walk is a candidate for the same unchecked pattern.
+
+### A failed ACL grant on a bind-mounted socket must fail the GUI setup
+
+- **Risk**: `mount_file_acl` discarded the `acl_guest_set` result, so a failed
+  POSIX ACL grant on a bind-mounted X11/Pulse socket left the guest unable to
+  connect while the run continued as if GUI setup had succeeded — the failure
+  surfaced later as a confusing connection error inside the sandbox.
+- **Prevention**: check and return the ACL result (the caller prints
+  `cage: GUI setup failed`), and log the offending target. Covered by
+  `mount_file_acl_propagates_failure` in `tests/test_gui.c`, which mocks the
+  socket open/stat and forces `sys_setxattr` to fail.
+- **Recurrence likelihood**: Medium — ACL and chown calls are easy to treat as
+  best-effort even when the guest needs their effect.
+
+### Build persistent artifacts aside and rename; validate before reuse
+
+- **Risk**: `setup_ext4_img` ignored `EEXIST`, so an image left behind by an
+  interrupted run (created with `O_CREAT|O_EXCL` and written in place) was
+  silently reused even though it was truncated or half-initialised. Mounting
+  it fails, and the failure is attributed to the loopback machinery rather
+  than to the stale artifact.
+- **Prevention**: build into `${img}.tmp.<pid>` and `rename()` over the target
+  so the final name only ever refers to a complete image; validate an existing
+  image with `ext4_image_valid()` (exact size plus `0xEF53` superblock magic)
+  before reusing it, and rebuild when validation fails. Covered by
+  `test_ext4_image_valid`.
+- **Recurrence likelihood**: Medium — in-place artifact creation plus
+  `EEXIST`-as-success is a common resume-from-crash pattern.
+
+### E2E: wait for observable state, not a fixed sleep
+
+- **Risk**: `e2e/same_fs.sh` slept a fixed 2s before asserting the ext4
+  loopback log line, the loop mount and the relocated appdir. Under load cage
+  had not reached the same-fs path yet, so all three checks failed with an
+  empty log even though cage was healthy and completed moments later.
+- **Prevention**: poll for a state the sandbox produces
+  (`test -d /var/lib/cage-loop/app-d1`) with a bounded 10s timeout before
+  asserting; the log and mount checks follow and report the real state. When a
+  test unmounts a fixture tmpfs, `umount` in a loop until the path is gone and
+  fail fast if it cannot be unmounted, so a leaked stacked mount cannot
+  silently disable the case. See Past Incidents §same_fs flake.
+- **Recurrence likelihood**: Medium — a fixed `sleep` is the default way to
+  wait for asynchronous setup and looks correct on an idle machine.
+
+### Bound reads of container-rootfs-controlled files
+
+- **Risk**: `io_read()` grows its buffer until EOF, so a huge
+  `/etc/resolv.conf` inside a container rootfs drives `buf_grow()` until
+  `mem_alloc()` aborts the child, giving the rootfs owner a memory-exhaustion
+  lever during setup.
+- **Prevention**: `io_read_cap(path, buf, cap)` reads at most `cap + 1` bytes
+  and fails once the limit is crossed. Resolv reads use a 64 KiB cap: an
+  oversized host file is treated as having no real DNS (default DNS is used),
+  while an oversized guest file fails setup closed. Covered by
+  `read_cap_exact`/`read_cap_exceeded` and
+  `setup_resolv_oversized_rejected`.
+- **Recurrence likelihood**: Medium — `io_read()` is the convenient default,
+  and container-rootfs files are easily mistaken for trusted configuration.
+
+### Do not use vfork for the sudo re-exec child
+
+- **Risk**: `try_sudo_reexec()` used `vfork()` to run `sudo --fix`. When sudo
+  was absent, the child fell back to `_exit(127)` after `execlp()`; on resume
+  the parent segfaulted in `_start_c` instead of reporting the expected
+  `cage: sudo --fix failed` error. `e2e/unprivileged.sh` caught rc=139 where
+  the test expects rc=1 and the word `sudo` on stderr.
+- **Prevention**: use `fork()` (`sys_fork`) for this repair-only child. The
+  path runs at most once after a broken install, so copying page tables is
+  irrelevant; correctness and a clean error path matter more. Covered by
+  `e2e/unprivileged.sh` cases "no setuid and no sudo" and "with passwordless
+  sudo".
+- **Recurrence likelihood**: Medium — `vfork` is the reflexive choice before
+  `exec`, and unit mocks skip the real child-exec failure path.
 
 ## Code Quality Exceptions
 

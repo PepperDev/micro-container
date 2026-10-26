@@ -38,10 +38,18 @@ char *advance_line(char *p)
   return nl ? nl + 1 : p + strlen(p);
 }
 
+// cppcheck-suppress staticFunction
+int __read_cgroups_file(buf_t *b)
+{
+  return io_read("/proc/cgroups", b);
+}
+
+weak_alias(__read_cgroups_file, read_cgroups_file);
+
 int read_proc_cgroups(char (*names)[64])
 {
   buf_t b = BUF_INIT;
-  if (io_read("/proc/cgroups", &b))
+  if (read_cgroups_file(&b))
     return -1;
   int n = 0;
   char *p = b.data;

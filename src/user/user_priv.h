@@ -7,6 +7,8 @@
 // cppcheck-suppress missingIncludeSystem
 #include <pwd.h>
 
+#define NOBODY_ID 65534
+
 typedef struct {
   char *name;
   gid_t gid;

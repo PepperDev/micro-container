@@ -26,7 +26,7 @@ static void test_resolve_script_guest_absolute(void)
   char buf[512];
   ASSERT_EQ(resolve_script("/init.sh", root, buf, sizeof(buf)), 0);
   ASSERT_STR_EQ(buf, "/init.sh");
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -41,7 +41,7 @@ static void test_resolve_script_relative(void)
   char buf[512];
   ASSERT_EQ(resolve_script("init.sh", root, buf, sizeof(buf)), 0);
   ASSERT_STR_EQ(buf, "init.sh");
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -59,7 +59,7 @@ static void test_resolve_script_nested(void)
   char buf[512];
   ASSERT_EQ(resolve_script("/scripts/init.sh", root, buf, sizeof(buf)), 0);
   ASSERT_STR_EQ(buf, "/scripts/init.sh");
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -70,7 +70,7 @@ static void test_resolve_script_missing(void)
 
   char buf[512];
   ASSERT_EQ(resolve_script("/nope.sh", root, buf, sizeof(buf)), -1);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -85,7 +85,7 @@ static void test_resolve_script_truncated(void)
   char buf[8];
   ASSERT_EQ(resolve_script(path, root, buf, sizeof(buf)), -1);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -101,7 +101,7 @@ static void test_resolve_script_host_path_as_is(void)
   ASSERT_EQ(resolve_script(path, root, buf, sizeof(buf)), 0);
   ASSERT_STR_EQ(buf, path);
   mem_free(path);
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 
@@ -117,7 +117,7 @@ static void test_resolve_host_home_valid(void)
   ASSERT_STR_EQ(env.host_home, root);
 
   unsetenv("SUDO_HOME");
-  test_rmtree(root);
+  io_rmtree(root);
   mem_free(root);
 }
 

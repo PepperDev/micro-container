@@ -1,6 +1,4 @@
 #include "syscall.h"
-#include "net/net.h"
-#include "net/netlink.h"
 // cppcheck-suppress missingIncludeSystem
 #include <sys/mount.h>
 // cppcheck-suppress missingIncludeSystem
@@ -26,9 +24,13 @@
 // cppcheck-suppress missingIncludeSystem
 #include <signal.h>
 // cppcheck-suppress missingIncludeSystem
+#include <sys/wait.h>
+// cppcheck-suppress missingIncludeSystem
 #include <grp.h>
 // cppcheck-suppress missingIncludeSystem
 #include <errno.h>
+// cppcheck-suppress missingIncludeSystem
+#include <stdio.h>
 
 /* weak defaults — overridden by tests/mock_syscall.c in test binary */
 
@@ -79,6 +81,14 @@ int __sys_chroot(const char *path)
 }
 
 weak_alias(__sys_chroot, sys_chroot);
+
+// cppcheck-suppress staticFunction
+int __sys_kill(pid_t pid, int sig)
+{
+  return kill(pid, sig);
+}
+
+weak_alias(__sys_kill, sys_kill);
 
 // cppcheck-suppress staticFunction
 int __sys_finit_module(int fd, const char *args, int flags)
@@ -244,68 +254,46 @@ int __sys_setgroups(size_t size, const gid_t *list)
 weak_alias(__sys_setgroups, sys_setgroups);
 
 // cppcheck-suppress staticFunction
-int __sys_netlink_open(int *fd)
+int __sys_chdir(const char *path)
 {
-  return netlink_open(fd);
+  return chdir(path);
 }
 
-weak_alias(__sys_netlink_open, sys_netlink_open);
+weak_alias(__sys_chdir, sys_chdir);
 
 // cppcheck-suppress staticFunction
-void __sys_netlink_close(int fd)
+pid_t __sys_fork(void)
 {
-  netlink_close(fd);
+  return fork();
 }
 
-weak_alias(__sys_netlink_close, sys_netlink_close);
+weak_alias(__sys_fork, sys_fork);
 
 // cppcheck-suppress staticFunction
-int __sys_netlink_send(int fd, const void *buf, size_t len)
+pid_t __sys_waitpid(pid_t pid, int *status, int options)
 {
-  return netlink_send(fd, buf, len);
+  return waitpid(pid, status, options);
 }
 
-weak_alias(__sys_netlink_send, sys_netlink_send);
+weak_alias(__sys_waitpid, sys_waitpid);
 
 // cppcheck-suppress staticFunction
-int __sys_netlink_recv(int fd, void *buf, size_t cap, size_t *len)
+int __sys_open_loop_control(void)
 {
-  return netlink_recv(fd, buf, cap, len);
+  return open("/dev/loop-control", O_RDWR | O_CLOEXEC);
 }
 
-weak_alias(__sys_netlink_recv, sys_netlink_recv);
+weak_alias(__sys_open_loop_control, sys_open_loop_control);
 
 // cppcheck-suppress staticFunction
-int __sys_netlink_recv_nb(int fd, void *buf, size_t cap, size_t *len)
+int __sys_open_loop_dev(int n)
 {
-  return netlink_recv_nb(fd, buf, cap, len);
+  char path[32];
+  snprintf(path, sizeof(path), "/dev/loop%d", n);
+  return open(path, O_RDWR | O_CLOEXEC);
 }
 
-weak_alias(__sys_netlink_recv_nb, sys_netlink_recv_nb);
-
-// cppcheck-suppress staticFunction
-int __sys_netlink_send_ack(int fd, const void *buf, size_t len)
-{
-  return netlink_send_ack(fd, buf, len);
-}
-
-weak_alias(__sys_netlink_send_ack, sys_netlink_send_ack);
-
-// cppcheck-suppress staticFunction
-int __sys_netlink_recv_dump(int fd, void *buf, size_t cap, size_t *len)
-{
-  return netlink_recv_dump(fd, buf, cap, len);
-}
-
-weak_alias(__sys_netlink_recv_dump, sys_netlink_recv_dump);
-
-// cppcheck-suppress staticFunction
-int __sys_netfilter_open(int *fd)
-{
-  return netfilter_open(fd);
-}
-
-weak_alias(__sys_netfilter_open, sys_netfilter_open);
+weak_alias(__sys_open_loop_dev, sys_open_loop_dev);
 
 // cppcheck-suppress staticFunction
 int __sys_access(const char *path, int mode)

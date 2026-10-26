@@ -5,12 +5,18 @@
 // cppcheck-suppress missingIncludeSystem
 #include <stdlib.h>
 
-uid_t get_uid(user_t *u)
+static user_t *mutable_user(const user_t *u)
 {
-  if (u->uid_filled)
-    return u->uid;
-  resolve_passwd(u);
-  return u->uid;
+  return (user_t *) u;
+}
+
+uid_t get_uid(const user_t *u)
+{
+  user_t *m = mutable_user(u);
+  if (m->uid_filled)
+    return m->uid;
+  resolve_passwd(m);
+  return m->uid;
 }
 
 void user_resolve(user_t *u)
@@ -18,27 +24,30 @@ void user_resolve(user_t *u)
   resolve_passwd(u);
 }
 
-const char *get_name(user_t *u)
+const char *get_name(const user_t *u)
 {
-  if (u->name)
-    return u->name;
-  if (!u->passwd_parsed)
-    resolve_passwd(u);
-  return u->name;
+  user_t *m = mutable_user(u);
+  if (m->name)
+    return m->name;
+  if (!m->passwd_parsed)
+    resolve_passwd(m);
+  return m->name;
 }
 
-const char *get_home(user_t *u)
+const char *get_home(const user_t *u)
 {
-  if (!u->passwd_parsed)
-    resolve_passwd(u);
-  return u->home ? u->home : "/home/.user";
+  user_t *m = mutable_user(u);
+  if (!m->passwd_parsed)
+    resolve_passwd(m);
+  return m->home ? m->home : "/home/.user";
 }
 
-const char *get_shell(user_t *u)
+const char *get_shell(const user_t *u)
 {
-  if (!u->passwd_parsed)
-    resolve_passwd(u);
-  return u->shell ? u->shell : "/bin/sh";
+  user_t *m = mutable_user(u);
+  if (!m->passwd_parsed)
+    resolve_passwd(m);
+  return m->shell ? m->shell : "/bin/sh";
 }
 
 static void get_gid_from_passwd(user_t *u)
@@ -53,29 +62,36 @@ static void get_gid_from_passwd(user_t *u)
   u->gid_filled = 1;
 }
 
-gid_t get_gid(user_t *u)
+gid_t get_gid(const user_t *u)
 {
-  if (u->gid_filled)
-    return u->gid;
-  if (u->group_tokens_count > 0 && u->group_tokens[0].name == NULL) {
-    u->gid = u->group_tokens[0].gid;
-    u->gid_filled = 1;
-    return u->gid;
+  user_t *m = mutable_user(u);
+  if (m->gid_filled)
+    return m->gid;
+  if (m->group_tokens_count > 0 && m->group_tokens[0].name == NULL) {
+    m->gid = m->group_tokens[0].gid;
+    m->gid_filled = 1;
+    return m->gid;
   }
-  resolve_groups(u);
-  if (u->gid_filled)
-    return u->gid;
-  get_gid_from_passwd(u);
-  return u->gid;
+  resolve_groups(m);
+  if (m->gid_filled)
+    return m->gid;
+  get_gid_from_passwd(m);
+  return m->gid;
+}
+
+static int gid_already_in_list(const gid_t *list, size_t count, gid_t g)
+{
+  for (size_t i = 0; i < count; i++)
+    if (list[i] == g)
+      return 1;
+  return 0;
 }
 
 static void ensure_primary_gid_in_groups(user_t *u)
 {
   if (u->groups) {
-    size_t i;
-    for (i = 0; i < u->groups_count; i++)
-      if (u->groups[i] == u->gid)
-        return;
+    if (gid_already_in_list(u->groups, u->groups_count, u->gid))
+      return;
     gid_t *ng = realloc(u->groups, (u->groups_count + 1) * sizeof(gid_t));
     if (ng) {
       u->groups = ng;
@@ -89,14 +105,6 @@ static void ensure_primary_gid_in_groups(user_t *u)
     u->groups[0] = u->gid;
     u->groups_count = 1;
   }
-}
-
-static int gid_already_in_list(const gid_t *list, size_t count, gid_t g)
-{
-  for (size_t i = 0; i < count; i++)
-    if (list[i] == g)
-      return 1;
-  return 0;
 }
 
 static void insert_gid_sorted(user_t *u, gid_t g)
@@ -127,18 +135,13 @@ static void append_remaining_gids(user_t *u)
   }
 }
 
-// cppcheck-suppress unusedFunction
-const char *get_rootfs(const user_t *u)
+group_list_t get_groups(const user_t *u)
 {
-  return u->rootfs;
-}
-
-group_list_t get_groups(user_t *u)
-{
-  resolve_groups(u);
-  get_gid(u);
-  ensure_primary_gid_in_groups(u);
-  append_remaining_gids(u);
-  group_list_t gl = { u->groups, u->groups_count };
+  user_t *m = mutable_user(u);
+  resolve_groups(m);
+  get_gid(m);
+  ensure_primary_gid_in_groups(m);
+  append_remaining_gids(m);
+  group_list_t gl = { m->groups, m->groups_count };
   return gl;
 }

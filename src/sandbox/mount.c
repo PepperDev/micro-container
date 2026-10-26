@@ -84,12 +84,7 @@ int mount_fs_type(const char *root, const char *sub, const char *type, unsigned 
 int mount_volumes(const char *root, const cage_config_t *cfg)
 {
   for (size_t i = 0; i < cfg->volume_count; i++) {
-    vol_t v;
-    if (parse_vol(&v, cfg->volumes[i]) != 0) {
-      fprintf(stderr, "cage: invalid volume spec: %s\n", cfg->volumes[i]);
-      return -1;
-    }
-    if (mount_user_volume(&v, root) != 0) {
+    if (mount_user_volume(&cfg->volumes_parsed[i], root) != 0) {
       fprintf(stderr, "cage: failed to mount volume: %s\n", cfg->volumes[i]);
       return -1;
     }
@@ -100,9 +95,7 @@ int mount_volumes(const char *root, const cage_config_t *cfg)
 /* cppcheck-suppress staticFunction */
 int mount_dev(const char *root)
 {
-  if (mount_bind(root, "dev", "/dev") != 0)
-    return -1;
-  return mount_bind(root, "dev/pts", "/dev/pts");
+  return mount_bind(root, "dev", "/dev");
 }
 
 static int mount_virtual_fses(const char *root)

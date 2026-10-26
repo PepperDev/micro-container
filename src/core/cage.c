@@ -1,26 +1,28 @@
 #include "cage.h"
 #include "prep.h"
-#include "cli/args.h"
 #include "proc.h"
+#include "reuse.h"
 #include "util/io.h"
-#include "util/mem.h"
 #include "util/syscall.h"
-#include "net/net.h"
-#include "net/netlink.h"
-#include "pkg/modprobe.h"
 #include "sandbox/cgroup.h"
+#include "net/net.h"
 // cppcheck-suppress missingIncludeSystem
-#include <string.h>
+#include <errno.h>
+#include "pkg/modprobe.h"
 // cppcheck-suppress missingIncludeSystem
 #include <fcntl.h>
 // cppcheck-suppress missingIncludeSystem
-#include <signal.h>
+#include <sched.h>
 // cppcheck-suppress missingIncludeSystem
 #include <stdio.h>
 // cppcheck-suppress missingIncludeSystem
 #include <stdlib.h>
 // cppcheck-suppress missingIncludeSystem
+#include <string.h>
+// cppcheck-suppress missingIncludeSystem
 #include <sys/mman.h>
+// cppcheck-suppress missingIncludeSystem
+#include <sys/stat.h>
 // cppcheck-suppress missingIncludeSystem
 #include <sys/wait.h>
 // cppcheck-suppress missingIncludeSystem
@@ -47,8 +49,8 @@ static void parent_nl_cmds(int fd, int net_id, int nsfd)
   char mbuf[256];
   char host[32];
   int host_idx;
-  snprintf(host, sizeof(host), "cage-veth%d", net_id);
-  if (netlink_create_veth(fd, host, "eth0", nsfd, &host_idx) < 0)
+  snprintf(host, sizeof(host), "%s%d", CAGE_VETH_HOST_PFX, net_id);
+  if (netlink_create_veth(fd, host, CAGE_VETH_PEER_NAME, nsfd, &host_idx) < 0)
     return;
   if (netlink_fill_addr(mbuf, sizeof(mbuf), host_idx, 31, NET_HOST_IP(net_id)) == 0)
     nl_send_msg(fd, mbuf);
@@ -57,11 +59,32 @@ static void parent_nl_cmds(int fd, int net_id, int nsfd)
   parent_nl_addr6(fd, net_id, host_idx);
 }
 
+static int wait_flag(volatile int *flag, int want, pid_t child)
+{
+  for (;;) {
+    if (*flag == want)
+      return 0;
+    siginfo_t si;
+    memset(&si, 0, sizeof(si));
+    if (waitid(P_PID, (id_t) child, &si, WEXITED | WNOHANG | WNOWAIT) == 0 && si.si_pid == child)
+      return -1;
+    struct timespec ts = { 0, 20 * 1000 * 1000 };
+    sys_futex_wait_to(flag, 0, &ts);
+  }
+}
+
+static int net_ready(volatile int *net_futex, pid_t child)
+{
+  if (*net_futex == 1)
+    return 0;
+  return wait_flag(net_futex, 1, child);
+}
+
 static void do_parent_net(pid_t child, int net_id, volatile int *net_futex)
 {
   char buf[64];
-  if (*net_futex != 1)
-    sys_futex_wait(net_futex, 0);
+  if (net_ready(net_futex, child) != 0)
+    return;
   snprintf(buf, sizeof(buf), "/proc/%d/ns/net", (int)child);
   int fd, nsfd = open(buf, O_RDONLY | O_CLOEXEC);
   if (nsfd >= 0) {
@@ -89,7 +112,7 @@ static volatile int *setup_net_links(int *net_id)
   int nfd;
   if (sys_netlink_open(&nfd) < 0)
     return NULL;
-  int r = netlink_alloc_veth_id(nfd, "cage-veth", net_id);
+  int r = netlink_alloc_veth_id(nfd, CAGE_VETH_HOST_PFX, net_id);
   sys_netlink_close(nfd);
   if (r < 0)
     return NULL;
@@ -137,6 +160,8 @@ static void spawn_st_init(struct spawn_st *st)
 {
   memset(&st->env, 0, sizeof(st->env));
   st->user = NULL;
+  st->pidfile = NULL;
+  st->free_pidfile = NULL;
   st->net_id = -1;
   st->pidfd = -1;
   st->child = -1;
@@ -167,7 +192,7 @@ static int do_setup_prep(const cage_config_t *cfg, struct spawn_st *st, uid_t ru
   st->root_futex = create_futex();
   if (!st->root_futex)
     return -1;
-  struct run_ctx rc = { st->user, &st->env, st->net_futex, st->root_futex, st->net_id, ruid, st->cg_fs_type };
+  struct run_ctx rc = { &st->env, st->net_futex, st->root_futex, st->net_id, ruid, st->cg_fs_type };
   struct prep_result pr;
   pr.cg_fs_type = st->cg_fs_type;
   pr.cg_pid = st->cg_pid;
@@ -190,16 +215,7 @@ static void remove_root(char **root)
 
 static int wait_root_ready(volatile int *ready, pid_t child)
 {
-  for (;;) {
-    if (*ready == 1)
-      return 0;
-    siginfo_t si;
-    memset(&si, 0, sizeof(si));
-    if (waitid(P_PID, (id_t) child, &si, WEXITED | WNOHANG | WNOWAIT) == 0 && si.si_pid == child)
-      return -1;
-    struct timespec ts = { 0, 20 * 1000 * 1000 };
-    sys_futex_wait_to(ready, 0, &ts);
-  }
+  return wait_flag(ready, 1, child);
 }
 
 static int finish_child(struct spawn_st *st)
@@ -217,10 +233,6 @@ static void spawn_cleanup(struct spawn_st *st)
 {
   free_futex(st->net_futex);
   free_futex(st->root_futex);
-  if (st->child >= 0) {
-    kill(st->child, SIGTERM);
-    pidwait(st->child, NULL);
-  }
   if (st->pidfd >= 0)
     close_pid(st->pidfd);
   unlink_pidfile(st->pidfile);
@@ -228,7 +240,9 @@ static void spawn_cleanup(struct spawn_st *st)
   user_free(st->user);
   remove_root(&st->root);
   mem_free(st->free_pidfile);
+  st->free_pidfile = NULL;
   mem_free(st->env.host_xdg_runtime_dir);
+  st->env.host_xdg_runtime_dir = NULL;
 }
 
 static int do_setup(const cage_config_t *cfg, struct spawn_st *st, uid_t ruid)
@@ -240,7 +254,7 @@ static int do_setup(const cage_config_t *cfg, struct spawn_st *st, uid_t ruid)
   return do_setup_prep(cfg, st, ruid);
 }
 
-static int spawn_init(cage_config_t *cfg, struct spawn_st *st, uid_t ruid)
+static int spawn_init(const cage_config_t *cfg, struct spawn_st *st, uid_t ruid)
 {
   spawn_st_init(st);
   struct pidfile_info pi;
@@ -249,8 +263,11 @@ static int spawn_init(cage_config_t *cfg, struct spawn_st *st, uid_t ruid)
   st->pidfile = pi.pidfile;
   st->free_pidfile = pi.free_pidfile;
   st->pidfd = create_pidfile(st->pidfile);
-  if (st->pidfd < 0)
+  if (st->pidfd < 0) {
+    mem_free(st->free_pidfile);
+    st->free_pidfile = NULL;
     return -1;
+  }
   if (do_setup(cfg, st, ruid) != 0)
     goto fail;
   return 0;
@@ -273,11 +290,13 @@ static int spawn_exec(struct spawn_st *st)
   return finish_child(st);
 }
 
-int spawn_cage(cage_config_t *cfg, uid_t ruid)
+int spawn_cage(const cage_config_t *cfg, uid_t ruid)
 {
   struct spawn_st st;
-  if (spawn_init(cfg, &st, ruid) < 0)
+  if (spawn_init(cfg, &st, ruid) < 0) {
+    mem_free(st.free_pidfile);
     return -1;
+  }
   int r = spawn_exec(&st);
   mem_free(st.free_pidfile);
   mem_free(st.env.host_xdg_runtime_dir);

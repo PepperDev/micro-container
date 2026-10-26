@@ -14,6 +14,8 @@
 #include <stdlib.h>
 // cppcheck-suppress missingIncludeSystem
 #include <time.h>
+// cppcheck-suppress missingIncludeSystem
+#include <sys/stat.h>
 
 struct wi {
   uint32_t root_blk, dindir_blk, jnl_fg, jnl_start;
@@ -303,6 +305,19 @@ static int do_create_writes(const struct mkfs *m)
     grp_flex_first(GROUPS - 1) * BLKS_PER_GRP + FLEX_META
   };
   return do_writes(m, &wi);
+}
+
+int ext4_image_valid(const char *path)
+{
+  int fd = open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+  if (fd < 0)
+    return 0;
+  struct stat st;
+  unsigned char m[2];
+  int ok = fstat(fd, &st) == 0 && st.st_size == (off_t) BLOCKS * BLK_SIZE
+      && pread(fd, m, sizeof(m), SB_OFF + 0x38) == (ssize_t) sizeof(m) && rd16(m) == 0xEF53;
+  close(fd);
+  return ok;
 }
 
 int ext4_create_img(const char *path)

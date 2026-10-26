@@ -1,5 +1,6 @@
 #include "io.h"
 #include "util/syscall.h"
+#include "util/mem.h"
 // cppcheck-suppress missingIncludeSystem
 #include <stdio.h>
 // cppcheck-suppress missingIncludeSystem
@@ -14,19 +15,6 @@
 #include <sys/stat.h>
 // cppcheck-suppress missingIncludeSystem
 #include <dirent.h>
-
-#define CHUNK 4096
-
-int io_exists(const char *path)
-{
-  int r = access(path, F_OK);
-  if (r == 0)
-    return 0;
-  if (errno == ENOENT || errno == EACCES)
-    return 1;
-  fprintf(stderr, "cage: unable to access %s\n", path);
-  return -1;
-}
 
 int io_isdir(const char *path)
 {
@@ -56,6 +44,7 @@ int io_unlink(const char *path)
     fprintf(stderr, "cage: unable to unlink %s\n", path);
     return -1;
   }
+  io_cache_invalidate(path);
   return 0;
 }
 
@@ -63,6 +52,7 @@ int io_unlink_quiet(const char *path)
 {
   if (unlink(path) != 0 && errno != ENOENT)
     return -1;
+  io_cache_invalidate(path);
   return 0;
 }
 
@@ -75,16 +65,24 @@ static int is_dot_or_dotdot(const char *name)
   return name[1] == '.' && name[2] == '\0';
 }
 
-static void rmtree_dir(DIR *d, const char *path)
+static int rmtree_dir(DIR *d, const char *path)
 {
   const struct dirent *e;
+  int rc = 0;
   while ((e = readdir(d)) != NULL) {
     if (is_dot_or_dotdot(e->d_name))
       continue;
     char child[4096];
-    snprintf(child, sizeof(child), "%s/%s", path, e->d_name);
-    io_rmtree(child);
+    int n = snprintf(child, sizeof(child), "%s/%s", path, e->d_name);
+    if (n < 0 || (size_t)n >= sizeof(child)) {
+      fprintf(stderr, "cage: path too long: %s/%s\n", path, e->d_name);
+      rc = -1;
+      continue;
+    }
+    if (io_rmtree(child) != 0)
+      rc = -1;
   }
+  return rc;
 }
 
 static int unlink_path(const char *path)
@@ -96,20 +94,36 @@ static int unlink_path(const char *path)
   return 0;
 }
 
-int io_rmtree(const char *path)
+static int is_symlink_path(const char *path)
 {
   struct stat sb;
-  if (lstat(path, &sb) == 0 && S_ISLNK(sb.st_mode))
-    return unlink_path(path);
+  return lstat(path, &sb) == 0 && S_ISLNK(sb.st_mode);
+}
+
+static int unlink_cached(const char *path)
+{
+  int r = unlink_path(path);
+  if (r == 0)
+    io_cache_invalidate(path);
+  return r;
+}
+
+int io_rmtree(const char *path)
+{
+  if (is_symlink_path(path))
+    return unlink_cached(path);
   DIR *d = opendir(path);
   if (!d)
-    return unlink_path(path);
-  rmtree_dir(d, path);
+    return unlink_cached(path);
+  int rc = rmtree_dir(d, path);
   closedir(d);
+  if (rc != 0)
+    return -1;
   if (rmdir(path) != 0 && errno != ENOENT) {
     fprintf(stderr, "cage: unable to rmdir %s\n", path);
     return -1;
   }
+  io_cache_invalidate(path);
   return 0;
 }
 
@@ -149,28 +163,42 @@ static int mkdir_check_existing(const char *path)
   return -1;
 }
 
-int io_mkdir(const char *path)
+static int mkdir_existing(const char *path)
 {
-  int e = io_exists(path);
-  if (e < 0)
-    return -1;
-  if (e == 0)
-    return mkdir_check_existing(path);
-  if (mkdir(path, 0755) == 0)
-    return 0;
-  if (errno != ENOENT) {
-    fprintf(stderr, "cage: unable to mkdir %s\n", path);
-    return -1;
-  }
+  int r = mkdir_check_existing(path);
+  if (r == 0)
+    io_cache_invalidate(path);
+  return r;
+}
+
+static int mkdir_deep(const char *path)
+{
   if (mkdir_parent(path) != 0)
     return -1;
-  return mkdirm(path, 0755);
+  int r = mkdirm(path, 0755);
+  if (r == 0)
+    io_cache_invalidate(path);
+  return r;
+}
+
+int io_mkdir(const char *path)
+{
+  if (mkdir(path, 0755) == 0) {
+    io_cache_invalidate(path);
+    return 0;
+  }
+  if (errno == EEXIST)
+    return mkdir_existing(path);
+  if (errno != ENOENT)
+    return -1;
+  return mkdir_deep(path);
 }
 
 static int mkdir_chown(const char *path, uid_t uid, gid_t gid, mode_t mode)
 {
   if (mkdir(path, mode) != 0)
     return -1;
+  io_cache_invalidate(path);
   if ((uid != 0 || gid != 0) && sys_chown(path, uid, gid) != 0)
     return -1;
   return 0;
@@ -219,6 +247,7 @@ int io_mkdtmp(const char *path, int sticky)
     fprintf(stderr, "cage: unable to mkdir %s\n", path);
     return -1;
   }
+  io_cache_invalidate(path);
   return 0;
 }
 
@@ -228,6 +257,7 @@ int io_symlink(const char *target, const char *path)
     fprintf(stderr, "cage: unable to symlink %s -> %s\n", target, path);
     return -1;
   }
+  io_cache_invalidate(path);
   return 0;
 }
 
@@ -248,60 +278,6 @@ int io_touch(const char *path)
     return -1;
   }
   close(fd);
+  io_cache_invalidate(path);
   return 0;
-}
-
-static void read_error(const char *op, const char *path, int quiet)
-{
-  if (!quiet)
-    fprintf(stderr, "cage: unable to %s %s\n", op, path);
-}
-
-static int read_loop(int fd, buf_t *b, const char *path, int quiet)
-{
-  for (;;) {
-    if (buf_grow(b, CHUNK) != 0)
-      return -1;
-    ssize_t n = read(fd, b->data + b->len, CHUNK);
-    if (n < 0) {
-      read_error("read", path, quiet);
-      return -1;
-    }
-    if (n == 0)
-      return 0;
-    b->len += n;
-  }
-}
-
-static int buf_terminate(buf_t *b)
-{
-  if (buf_grow(b, 1) != 0)
-    return -1;
-  b->data[b->len] = '\0';
-  return 0;
-}
-
-static int read_file(const char *path, buf_t *b, int quiet)
-{
-  int fd = open(path, O_RDONLY | O_CLOEXEC);
-  if (fd < 0) {
-    read_error("open", path, quiet);
-    return -1;
-  }
-
-  int r = read_loop(fd, b, path, quiet);
-  if (r == 0)
-    r = buf_terminate(b);
-  close(fd);
-  return r;
-}
-
-int io_read(const char *path, buf_t *b)
-{
-  return read_file(path, b, 0);
-}
-
-int io_read_quiet(const char *path, buf_t *b)
-{
-  return read_file(path, b, 1);
 }

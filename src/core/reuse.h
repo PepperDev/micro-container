@@ -9,7 +9,15 @@
 
 int spawn_existing(cage_config_t * cfg, pid_t old_pid, uid_t ruid);
 
-int reuse_setup_env(cage_config_t * cfg, const user_t * user, const char *root, env_t * env, uid_t ruid);
+struct reuse_req {
+  cage_config_t *cfg;
+  const user_t *user;
+  const char *root;
+  const char *inst_env;
+  uid_t ruid;
+};
+
+int reuse_setup_env(env_t * env, const struct reuse_req *req);
 
 int wait_status(pid_t child);
 
