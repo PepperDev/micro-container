@@ -80,45 +80,77 @@ if e2e_root sh -c 'command -v nft >/dev/null 2>&1'; then
 fi
 
 # IPv6 egress. -N gives the sandbox a ULA address, a default route and an ip6
-# cage-nat masquerade table, so the address check passes. The fetch only works
-# when the daemon host has an IPv6 upstream; the QEMU slirp net provides none, so
-# the internet check stays red there. wget prints the caller's public IPv6
-# address on success.
+# cage-nat masquerade table, so the address check passes. The internet fetch is
+# gated on the daemon container's own IPv6 egress: when the container can reach
+# api6, the sandbox must too and a failure is a real cage failure; when the
+# container has no IPv6 egress, skip the check. wget prints the caller's public
+# IPv6 address on success.
 e2e_run e2e_exec cage -N -l /altroot -n n6 -u 1000 -g 1000 -- \
   /bin/sh -c 'ip -6 -o addr show dev eth0 scope global'
 e2e_check_contains "-N sandbox eth0 has a global IPv6 address" "$E2E_OUT" "inet6"
 e2e_wait_session_gone n6
 
 # Enabling global IPv6 forwarding purges RA-learned default routes on
-# interfaces with accept_ra=1, breaking the host's IPv6 connectivity (the
+# interfaces with accept_ra=1, breaking the container's IPv6 connectivity (the
 # router default routes disappear). cage must keep all/forwarding off and use
-# per-interface force_forwarding instead.
-if e2e_root test -e /proc/sys/net/ipv6/conf/all/force_forwarding; then
-  e2e_root sh -c 'echo 0 > /proc/sys/net/ipv6/conf/all/forwarding'
+# per-interface force_forwarding instead. These paths are resolved inside the
+# remote cage-t container's netns, not in the e2e runner or Docker host.
+if docker exec "$CAGE_CTR" test -e /proc/sys/net/ipv6/conf/all/force_forwarding; then
+  docker exec "$CAGE_CTR" sh -c 'echo 0 > /proc/sys/net/ipv6/conf/all/forwarding'
   e2e_exec cage -N -l /altroot -n n6f -u 1000 -g 1000 -- true
   e2e_wait_session_gone n6f
-  e2e_run e2e_root sh -c '
-    printf "fwd=%s all_ff=%s dflt_ff=%s\n" \
+  e2e_run docker exec "$CAGE_CTR" sh -c '
+    printf "fwd=%s all_ff=%s dflt_ff=%s eth0_ff=%s\n" \
       "$(cat /proc/sys/net/ipv6/conf/all/forwarding)" \
       "$(cat /proc/sys/net/ipv6/conf/all/force_forwarding)" \
-      "$(cat /proc/sys/net/ipv6/conf/default/force_forwarding)"'
-  e2e_check_contains "-N leaves host IPv6 forwarding off" "$E2E_OUT" "fwd=0"
-  e2e_check_contains "-N enables per-interface IPv6 forwarding" "$E2E_OUT" "all_ff=1"
-  e2e_check_contains "-N enables IPv6 forwarding for new veths" "$E2E_OUT" "dflt_ff=1"
+      "$(cat /proc/sys/net/ipv6/conf/default/force_forwarding)" \
+      "$(cat /proc/sys/net/ipv6/conf/eth0/force_forwarding)"'
+  e2e_check_contains "-N leaves container IPv6 forwarding off" "$E2E_OUT" "fwd=0"
+  e2e_check_contains "-N sets all force_forwarding" "$E2E_OUT" "all_ff=1"
+  e2e_check_contains "-N sets default force_forwarding for new veths" "$E2E_OUT" "dflt_ff=1"
+  e2e_check_contains "-N sets force_forwarding on existing interfaces" "$E2E_OUT" "eth0_ff=1"
 else
   log "  SKIP -N IPv6 forwarding sysctl checks (kernel lacks force_forwarding)"
 fi
 
-e2e_run e2e_exec cage -N -l /altroot -n n6e -u 1000 -g 1000 -- \
-  /bin/sh -c '
-    wget -qO- -T8 http://api6.ipify.org
-    printf "\nwget6_rc=%s\n" "$?"'
-if echo "$E2E_OUT" | grep -q "wget6_rc=0"; then
-  e2e_pass "-N sandbox reaches IPv6 internet (api6.ipify.org)"
+if docker exec "$CAGE_CTR" wget -q -O /dev/null -T7 http://api6.ipify.org 2>/dev/null; then
+  share=/tmp/cage-ipv6-e2e
+  docker exec "$CAGE_CTR" sh -c 'rm -rf "$1"; mkdir -p "$1"; chown "$2:$3" "$1"' \
+    _ "$share" "$E2E_UID" "$E2E_GID"
+  e2e_exec_d cage -N -l /altroot -n n6e -u 1000 -g 1000 -v "$share:/out" -- \
+    /bin/sh -c '
+      wget -qO- -T8 http://api6.ipify.org > /out/result 2>&1 &
+      wp=$!
+      ( sleep 15; kill "$wp" 2>/dev/null ) &
+      wd=$!
+      wait "$wp"
+      rc=$?
+      kill "$wd" 2>/dev/null
+      printf "\nwget6_rc=%s\n" "$rc" >> /out/result'
+  i=0
+  while [ "$i" -lt 300 ]; do
+    if docker exec "$CAGE_CTR" grep -q 'wget6_rc=' "$share/result" 2>/dev/null; then
+      break
+    fi
+    i=$((i + 1))
+    sleep 0.1
+  done
+  E2E_OUT=
+  i=0
+  while [ "$i" -lt 20 ]; do
+    E2E_OUT=$(docker exec "$CAGE_CTR" cat "$share/result" 2>/dev/null || :)
+    case "$E2E_OUT" in
+      *wget6_rc=*) break ;;
+    esac
+    i=$((i + 1))
+    sleep 0.1
+  done
+  e2e_check_contains "-N sandbox reaches IPv6 internet (api6.ipify.org)" "$E2E_OUT" "wget6_rc=0"
+  e2e_wait_session_gone n6e
+  docker exec "$CAGE_CTR" rm -rf "$share" || :
 else
-  log "  SKIP -N sandbox reaches IPv6 internet (api6.ipify.org) (no IPv6 egress)"
+  log "  SKIP -N sandbox reaches IPv6 internet (api6.ipify.org) (container has no IPv6 egress)"
 fi
-e2e_wait_session_gone n6e
 
 # Parallel -N: veth IDs must be sequential (+2 in IPs)
 e2e_exec_d cage -N -l /altroot -n p0 -u 1000 -g 1000 -- sleep 10

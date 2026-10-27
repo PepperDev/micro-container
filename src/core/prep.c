@@ -77,22 +77,24 @@ static void unprepare(char **root)
   }
 }
 
-static int early_prep(const cage_config_t *cfg, struct prep_result *pr)
+static int early_prep(const cage_config_t *cfg, struct prep_result *pr, int *root_private)
 {
   if (early_setup_appdir(cfg, &pr->dirs) != 0)
     return -1;
   if (pr->cg_fs_type != 2)
     return 0;
+  if (cgroup_detect_mount(root_private) != 0)
+    return -1;
   return cgroup_pre_unshare(pr->cg_fs_type, pr->cg_pid) != 0 ? -1 : 0;
 }
 
-int do_root_prep(const cage_config_t *cfg, struct prep_result *pr, const struct run_ctx *rc, int root_private)
+int do_root_prep(const cage_config_t *cfg, struct prep_result *pr, const struct run_ctx *rc, int *root_private)
 {
-  if (early_prep(cfg, pr) != 0)
+  if (early_prep(cfg, pr, root_private) != 0)
     return -1;
   if (!(pr->root = alloc_root_template()))
     return -1;
-  if (prepare_mounts(pr, cfg, rc, root_private)) {
+  if (prepare_mounts(pr, cfg, rc, *root_private)) {
     unprepare(&pr->root);
     return -1;
   }

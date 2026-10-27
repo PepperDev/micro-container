@@ -113,6 +113,7 @@ e2e_exec_d() {
   docker exec -d -u "$E2E_UID:$E2E_GID" "$CAGE_CTR" "$@"
 }
 
+# Root inside the remote e2e container, never the e2e runner/Docker host.
 e2e_root() {
   docker exec "$CAGE_CTR" "$@"
 }

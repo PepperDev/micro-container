@@ -222,6 +222,28 @@ When touching cgroup namespaces or cleanup, check:
 - Does the unit test assert the PID was written to the parent `cgroup.procs`
   and that a nested `cage-parent` directory is removed?
 
+### Samefs loopback setup must precede the cgroup private mount unshare
+
+- **Risk**: with `-C` on a host where cgroup2 is not already mounted,
+  `cgroup_detect_mount()` unshares a private mount namespace so it can mount
+  cgroup2. If that unshare runs before `early_setup_appdir()`/`handle_same_fs()`,
+  the samefs ext4 loop mount is created inside the private namespace and
+  disappears when cage exits. The log still reports the loopback and dmesg
+  shows ext4 mounted then unmounted, but the relocated appdir is missing from
+  the caller's mount namespace. Docker masks this because its cgroup2 is
+  pre-mounted, so the private unshare is skipped.
+- **Prevention**: keep samefs detection and loopback setup in the pre-unshare
+  parent path (`early_setup_appdir()` in `early_prep()`), then call
+  `cgroup_detect_mount()` and `cgroup_pre_unshare()` afterward. Cover both
+  branches: `e2e/same_fs.sh` checks `-C` with cgroup2 pre-mounted and again
+  after hiding cgroup2 in a private mount namespace with
+  `unshare -m; umount -l /sys/fs/cgroup`. See
+  [lifecycle.md §Samefs / Ext4 Loopback Flow](lifecycle.md#samefs-ext4-loopback-flow)
+  and Past Incidents §samefs -C cgroup2.
+- **Recurrence likelihood**: High — the cgroup2 mount setup and samefs loop
+  setup both need a mount namespace, and moving the private unshare earlier
+  looks harmless until the cross-filesystem loop is created after it.
+
 ### Loop device: hold the setup fd across mount with LO_FLAGS_AUTOCLEAR
 
 A loop device configured with `LO_FLAGS_AUTOCLEAR` is detached as soon as its
@@ -1556,10 +1578,11 @@ makes the kernel purge every RA-learned default route whose interface has
 default routes and IPv6 connectivity.
 
 Use the per-interface `force_forwarding` knob instead: write
-`conf/all/force_forwarding=1` for existing interfaces and
-`conf/default/force_forwarding=1` for interfaces created later (the veth).
-`force_forwarding` makes `ip6_forward` accept packets on that input interface
-without flipping `cnf.forwarding`, so RA processing keeps working.
+`conf/default/force_forwarding=1` for interfaces created later (the veth) and
+`conf/<iface>/force_forwarding=1` for every existing interface. Also write
+`conf/all/force_forwarding=1` for the global default. `force_forwarding` makes
+`ip6_forward` accept packets on that input interface without flipping
+`cnf.forwarding`, so RA processing keeps working.
 
 Common mistakes:
 - Writing `conf/all/accept_ra=2` "to fix RA": `all/accept_ra` does not
@@ -1568,6 +1591,8 @@ Common mistakes:
   immediate and the next unsolicited RA may be minutes away.
 - Forgetting `default/force_forwarding`: the host side works, but the newly
   created `cage-vethN` has no forwarding and container traffic is dropped.
+- Relying on `all/force_forwarding` to cover existing interfaces: it does not
+  propagate, so the upstream `eth0` stays at 0 and return traffic is dropped.
 
 On kernels without `force_forwarding` (< 6.17), raise `accept_ra` to 2 on
 every existing interface (individually; `all/accept_ra` does not propagate)
@@ -1575,8 +1600,9 @@ every existing interface (individually; `all/accept_ra` does not propagate)
 default routes survive. Abort the forwarding write if any per-interface raise
 fails — a partial raise can still purge routes on the missed interface.
 
-`e2e/network.sh` asserts `all/forwarding` stays 0 and both force_forwarding
-knobs become 1 after a `-N` session (6.17+ path).
+`e2e/network.sh` asserts `all/forwarding` stays 0, the `all` and `default`
+force_forwarding knobs become 1, and the existing `eth0` has
+`force_forwarding=1` after a `-N` session (6.17+ path).
 
 ### Set-but-empty environment variables must be treated as unset
 

@@ -208,11 +208,31 @@ static void legacy_ip6_forward(void)
   write_one("/proc/sys/net/ipv6/conf/all/forwarding");
 }
 
+/* all/force_forwarding does not propagate to existing interfaces; write each
+   one individually so return traffic entering the host upstream is forwarded. */
+static void force_forward_existing(DIR *d)
+{
+  char path[64];
+  const struct dirent *e;
+  while ((e = readdir(d)) != NULL) {
+    if (skip_conf_entry(e->d_name))
+      continue;
+    if (snprintf(path, sizeof(path), "/proc/sys/net/ipv6/conf/%s/force_forwarding", e->d_name) >= (int)sizeof(path))
+      continue;
+    write_str(path, "1\n");
+  }
+}
+
 // cppcheck-suppress staticFunction
 int __net_enable_ip6_forward(void)
 {
   if (write_str("/proc/sys/net/ipv6/conf/all/force_forwarding", "1\n") == 0) {
     write_str("/proc/sys/net/ipv6/conf/default/force_forwarding", "1\n");
+    DIR *d = opendir("/proc/sys/net/ipv6/conf");
+    if (d) {
+      force_forward_existing(d);
+      closedir(d);
+    }
     return 0;
   }
   legacy_ip6_forward();

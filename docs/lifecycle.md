@@ -650,8 +650,11 @@ define setup net host side [main parent]:       # parent side (L145; only with "
    requires an IPv6 upstream on the host.
 
    On kernels with `force_forwarding` (6.17+), forwarding is enabled with
-   `conf/all/force_forwarding=1` plus `conf/default/force_forwarding=1` (so
-   the new `cage-vethN` inherits it), never with `conf/all/forwarding=1`:
+   `conf/default/force_forwarding=1` (so the new `cage-vethN` inherits it),
+   `conf/all/force_forwarding=1`, and a per-interface
+   `conf/<iface>/force_forwarding=1` for every existing interface: the `all`
+   knob does not retroactively apply, so the upstream `eth0` would otherwise
+   stay at 0 and drop return traffic. Never use `conf/all/forwarding=1`:
    global forwarding purges the host's RA-learned default routes on
    interfaces with `accept_ra != 2`, which breaks host IPv6 connectivity.
    Older kernels fall back to raising `accept_ra` to 2 on every existing

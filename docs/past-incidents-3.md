@@ -775,14 +775,36 @@
   `accept_ra != 2`. The `all/accept_ra` writes added alongside did not
   propagate to existing interfaces, so the purge removed the host routes.
 - **Prevention**: enable forwarding through the per-interface
-  `force_forwarding` knob (`all` + `default`), which leaves `cnf.forwarding`
-  and RA processing untouched. On kernels without `force_forwarding`, raise
+  `force_forwarding` knob (`all`, `default`, and each existing interface),
+  which leaves `cnf.forwarding` and RA processing untouched. On kernels
+  without `force_forwarding`, raise
   `accept_ra` to 2 on every interface before enabling global forwarding and
   abort if any raise fails. `e2e/network.sh` now asserts `-N` leaves
-  `all/forwarding=0` and sets both force_forwarding knobs; pitfall recorded in
-  docs/qa.md §Domain-Specific Pitfalls.
+  `all/forwarding=0` and sets the `all`, `default`, and existing-interface
+  force_forwarding knobs; pitfall recorded in docs/qa.md §Domain-Specific
+  Pitfalls.
 - **Recurrence likelihood**: High — kernel forwarding semantics are
   non-obvious and a global `all/forwarding` write looks like the natural fix.
+
+### -N IPv6 forwarding missed existing interfaces
+
+- **Bug**: with an IPv6-capable host, the `-N` sandbox got a ULA address and
+  default route but could not reach the IPv6 internet; `wget` hung.
+  `eth0/force_forwarding` stayed 0 while `all` and `default` were 1. Setting
+  `eth0/force_forwarding=1` by hand made the fetch succeed.
+- **Root cause**: `net_enable_ip6_forward()` wrote only `all` and `default`.
+  `all/force_forwarding` is not a propagation switch: it does not
+  retroactively change existing interfaces. Return traffic from the upstream
+  entered `eth0`, where `ip6_forward` dropped it because
+  `eth0/force_forwarding == 0`.
+- **Prevention**: after setting `all`/`default`, iterate
+  `/proc/sys/net/ipv6/conf/*` and write `force_forwarding=1` for every existing
+  non-`all`/`default` interface. `e2e/network.sh` runs the IPv6 internet check
+  whenever the container itself has IPv6 egress (instead of skipping on an
+  assumed lack of host IPv6) and asserts `eth0/force_forwarding=1`; pitfall
+  updated in docs/qa.md §Domain-Specific Pitfalls.
+- **Recurrence likelihood**: High — "all" sounds like it covers every
+  interface, so the per-interface loop is easy to omit.
 
 ### same_fs flake: fixed sleep and stacked tmpfs mount
 
@@ -819,3 +841,31 @@
   pitfall is recorded in docs/qa.md §Domain-Specific Pitfalls.
 - **Recurrence likelihood**: Medium — vfork looks like the natural optimization
   before exec, and mocked unit tests do not exercise exec failure.
+
+### samefs -C discarded the loopback when cgroup2 was not pre-mounted
+
+- **Bug**: on a QEMU Alpine 3.24.2 guest (kernel `6.18.52-0-lts`) with an empty
+  `/sys/fs/cgroup`, `cage -C -n samefs-cq -u 1000 -g 1000 -- /bin/true` logged
+  "using ext4 loopback", dmesg showed loop0 ext4 mounted and then unmounted,
+  and `/var/lib/cage-loop/app-samefs-cq` was missing. The same run without
+  `-C`, and the same run with cgroup2 pre-mounted, left the appdir present.
+  Docker never reproduced it because `/sys/fs/cgroup/cgroup.controllers`
+  already exists there.
+- **Root cause**: `setup_cgroup()` called `cgroup_detect_mount()` before
+  `early_setup_appdir()`/`handle_same_fs()`. When cgroup2 was absent,
+  `cgroup_detect_mount()` unshared a private mount namespace and mounted
+  cgroup2 there; the subsequent ext4 loop mount therefore lived only in that
+  private namespace and was discarded with it. This contradicted
+  [lifecycle.md §Samefs / Ext4 Loopback Flow](lifecycle.md#samefs-ext4-loopback-flow),
+  which requires samefs setup before any unshare, including the private
+  cgroup2 mount unshare.
+- **Prevention**: samefs detection and loopback setup now run in
+  `early_prep()` before `cgroup_detect_mount()` and `cgroup_pre_unshare()`.
+  `e2e/same_fs.sh` covers `-C` with cgroup2 pre-mounted and repeats the check
+  after `unshare -m` + `umount -l /sys/fs/cgroup`; the full e2e suite passes
+  with `same_fs` 7/0. Pitfall recorded in docs/qa.md §Domain-Specific Pitfalls.
+  Evidence: `.tmp/qemu-samefs-c-2026-10-27.log`,
+  `.tmp/qemu-samefs-c2-2026-10-27.log`.
+- **Recurrence likelihood**: High — the private mount unshare is easy to move
+  before appdir preparation, and a pre-mounted cgroup2 hides the regression on
+  the usual Docker test host.

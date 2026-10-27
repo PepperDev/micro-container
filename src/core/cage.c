@@ -181,9 +181,6 @@ static int setup_cgroup(const cage_config_t *cfg, struct spawn_st *st)
   if (st->cg_fs_type < 0)
     return -1;
   st->cg_pid = getpid();
-  st->cgroup_root_private = 0;
-  if (st->cg_fs_type == 2 && cgroup_detect_mount(&st->cgroup_root_private) != 0)
-    return -1;
   return 0;
 }
 
@@ -196,7 +193,7 @@ static int do_setup_prep(const cage_config_t *cfg, struct spawn_st *st, uid_t ru
   struct prep_result pr;
   pr.cg_fs_type = st->cg_fs_type;
   pr.cg_pid = st->cg_pid;
-  if (do_root_prep(cfg, &pr, &rc, st->cgroup_root_private) < 0)
+  if (do_root_prep(cfg, &pr, &rc, &st->cgroup_root_private) < 0)
     return -1;
   st->root = pr.root;
   st->child = pr.child;

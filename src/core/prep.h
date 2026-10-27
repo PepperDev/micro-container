@@ -13,7 +13,7 @@ struct pidfile_info {
 };
 
 int do_early_setup(const cage_config_t * cfg, struct pidfile_info *pi);
-int do_root_prep(const cage_config_t * cfg, struct prep_result *pr, const struct run_ctx *rc, int root_private);
+int do_root_prep(const cage_config_t * cfg, struct prep_result *pr, const struct run_ctx *rc, int *root_private);
 int resolve_script(const char *script, const char *root, char *buf, size_t size);
 const char *find_envvar(const cage_config_t * cfg, const char *key);
 void resolve_host_home(env_t * env);

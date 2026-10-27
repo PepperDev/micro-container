@@ -60,7 +60,50 @@ sleep 1
 e2e_root sh -c 'test -d /var/lib/cage-loop/app-samefs'
 e2e_check_rc "samefs loop appdir created in host mount ns" 0 "$?"
 e2e_exec cage -k -n samefs 2>/dev/null || :
-rm -rf /var/lib/cage-loop/app-samefs 2>/dev/null || :
+docker exec "$CAGE_CTR" rm -rf /var/lib/cage-loop/app-samefs
+
+# Same check with -C (cgroup namespace unshared).
+e2e_root rm -rf /var/lib/cage-loop/app-samefs-c
+e2e_root sh -c 'test ! -d /var/lib/cage-loop/app-samefs-c'
+e2e_exec cage -C -n samefs-c true 2>/dev/null || docker exec "$CAGE_CTR" sh -c 'cage -C -n samefs-c true' 2>/dev/null || :
+sleep 1
+e2e_root sh -c 'test -d /var/lib/cage-loop/app-samefs-c'
+e2e_check_rc "samefs loop appdir created in host mount ns with -C" 0 "$?"
+e2e_exec cage -k -n samefs-c 2>/dev/null || :
+docker exec "$CAGE_CTR" rm -rf /var/lib/cage-loop/app-samefs-c
+
+# With -C, hide cgroup2 so cage takes its private-mount cgroup path. The
+# samefs ext4 loop must still be visible in the caller's mount namespace.
+e2e_root sh -c '
+  while umount /var/lib/cage-loop 2>/dev/null; do :; done
+  losetup -a 2>/dev/null | grep cage-loop | sed "s/:.*//" |
+    while IFS= read -r d; do losetup -d "$d"; done
+  rm -f /var/lib/cage-loop.img /tmp/samefs-cg.rc /tmp/samefs-cg.out
+  rm -rf /var/lib/cage-loop/app-samefs-cg'
+docker exec -d "$CAGE_CTR" sh -c '
+  unshare -m sh -c "
+    mount --make-rprivate /
+    umount -l /sys/fs/cgroup
+    cage -C -n samefs-cg true >/tmp/samefs-cg.out 2>&1
+    test -d /var/lib/cage-loop/app-samefs-cg
+    echo \$? > /tmp/samefs-cg.rc
+  "'
+i=0
+while [ "$i" -lt 100 ]; do
+  if e2e_root test -f /tmp/samefs-cg.rc; then
+    break
+  fi
+  i=$(( i + 1 ))
+  sleep 0.1
+done
+e2e_run e2e_root cat /tmp/samefs-cg.rc
+e2e_check_contains "samefs loop appdir visible with -C when cgroup2 not pre-mounted" "$E2E_OUT" "0"
+e2e_root sh -c '
+  while umount /var/lib/cage-loop 2>/dev/null; do :; done
+  losetup -a 2>/dev/null | grep cage-loop | sed "s/:.*//" |
+    while IFS= read -r d; do losetup -d "$d"; done
+  rm -f /var/lib/cage-loop.img /tmp/samefs-cg.rc /tmp/samefs-cg.out
+  rm -rf /var/lib/cage-loop/app-samefs-cg'
 
 # Restore the tmpfs appdir and drop the loopback.
 docker exec "$CAGE_CTR" sh -c '
